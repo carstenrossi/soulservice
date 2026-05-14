@@ -3,21 +3,26 @@
 from __future__ import annotations
 
 import logging
-from contextlib import asynccontextmanager
-from collections.abc import AsyncIterator
+from contextvars import ContextVar, copy_context
 
 from sqlalchemy import text
+import uvicorn
 
 from mcp.server.fastmcp import FastMCP
 
 from soulservice.core.config import settings
-from soulservice.core.db import engine, async_session_factory
+from soulservice.core.db import async_session_factory, get_scoped_session
 from soulservice.core.audit import log_tool_call
+from soulservice.core.auth import TokenIdentity
 from soulservice.mcp.middleware import resolve_bearer_token
 from soulservice.mcp.tools.identity import get_self_core, get_relationship_overview
 from soulservice.mcp.tools.meta import health_check, whoami_info
 
 logger = logging.getLogger("soulservice.mcp")
+
+current_identity: ContextVar[TokenIdentity | None] = ContextVar(
+    "current_identity", default=None
+)
 
 mcp = FastMCP(
     "Soulservice",
@@ -27,8 +32,26 @@ mcp = FastMCP(
     ),
 )
 
-# Store resolved identity per-request in a context var
-_current_identity = None
+
+# ── ASGI Auth Middleware ─────────────────────────────────────────
+
+
+class BearerAuthASGIMiddleware:
+    """Pure ASGI middleware – no BaseHTTPMiddleware context-var issues."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http":
+            headers = dict(scope.get("headers", []))
+            auth_raw = headers.get(b"authorization", b"").decode()
+            if auth_raw:
+                identity = await resolve_bearer_token(auth_raw)
+                current_identity.set(identity)
+            else:
+                current_identity.set(None)
+        await self.app(scope, receive, send)
 
 
 # ── Tools ────────────────────────────────────────────────────────
@@ -43,31 +66,22 @@ async def health() -> dict:
 @mcp.tool()
 async def who_are_you() -> str:
     """Load the Soul's identity (Self Core). Call this first in every conversation."""
-    identity = _current_identity
+    identity = current_identity.get()
     if identity is None:
         return "Error: not authenticated. Provide a valid Bearer token."
 
-    async with async_session_factory() as session:
-        async with session.begin():
-            await session.execute(
-                text("SET LOCAL app.current_tenant = :tid"),
-                {"tid": str(identity.tenant_id)},
-            )
-            await session.execute(
-                text("SET LOCAL app.current_soul = :sid"),
-                {"sid": str(identity.soul_id)},
-            )
-            result = await get_self_core(session, identity.soul_id)
+    async with get_scoped_session(identity.tenant_id, identity.soul_id) as session:
+        result = await get_self_core(session, identity.soul_id)
 
-            await log_tool_call(
-                session,
-                tenant_id=identity.tenant_id,
-                user_id=identity.user_id,
-                soul_id=identity.soul_id,
-                token_id=identity.token_id,
-                tool_name="who_are_you",
-                result_size=len(result),
-            )
+        await log_tool_call(
+            session,
+            tenant_id=identity.tenant_id,
+            user_id=identity.user_id,
+            soul_id=identity.soul_id,
+            token_id=identity.token_id,
+            tool_name="who_are_you",
+            result_size=len(result),
+        )
 
     return result
 
@@ -75,31 +89,22 @@ async def who_are_you() -> str:
 @mcp.tool()
 async def whats_our_history() -> str:
     """Relationship overview and current topics. Call after who_are_you()."""
-    identity = _current_identity
+    identity = current_identity.get()
     if identity is None:
         return "Error: not authenticated. Provide a valid Bearer token."
 
-    async with async_session_factory() as session:
-        async with session.begin():
-            await session.execute(
-                text("SET LOCAL app.current_tenant = :tid"),
-                {"tid": str(identity.tenant_id)},
-            )
-            await session.execute(
-                text("SET LOCAL app.current_soul = :sid"),
-                {"sid": str(identity.soul_id)},
-            )
-            result = await get_relationship_overview(session, identity.soul_id)
+    async with get_scoped_session(identity.tenant_id, identity.soul_id) as session:
+        result = await get_relationship_overview(session, identity.soul_id)
 
-            await log_tool_call(
-                session,
-                tenant_id=identity.tenant_id,
-                user_id=identity.user_id,
-                soul_id=identity.soul_id,
-                token_id=identity.token_id,
-                tool_name="whats_our_history",
-                result_size=len(result),
-            )
+        await log_tool_call(
+            session,
+            tenant_id=identity.tenant_id,
+            user_id=identity.user_id,
+            soul_id=identity.soul_id,
+            token_id=identity.token_id,
+            tool_name="whats_our_history",
+            result_size=len(result),
+        )
 
     return result
 
@@ -107,7 +112,7 @@ async def whats_our_history() -> str:
 @mcp.tool()
 async def whoami() -> dict:
     """Which Soul, which Tenant, which User am I connected to?"""
-    identity = _current_identity
+    identity = current_identity.get()
     if identity is None:
         return {"error": "not authenticated"}
 
@@ -137,6 +142,13 @@ async def whoami() -> dict:
 
 # ── Server Entry Point ──────────────────────────────────────────
 
+
+def create_app():
+    """Create the ASGI app with auth middleware wrapping the MCP server."""
+    mcp_app = mcp.streamable_http_app()
+    return BearerAuthASGIMiddleware(mcp_app)
+
+
 def main() -> None:
     logging.basicConfig(
         level=getattr(logging, settings.soulservice_log_level.upper()),
@@ -147,7 +159,12 @@ def main() -> None:
         settings.soulservice_host,
         settings.soulservice_port,
     )
-    mcp.run(transport="streamable-http")
+    app = create_app()
+    uvicorn.run(
+        app,
+        host=settings.soulservice_host,
+        port=settings.soulservice_port,
+    )
 
 
 if __name__ == "__main__":

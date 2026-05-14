@@ -9,14 +9,14 @@ CREATE EXTENSION IF NOT EXISTS vector;
 
 -- ============================================================
 -- Roles: app (restricted) and migrate (schema changes)
--- ============================================================
+-- In production, use separate credentials. For local dev, simple passwords suffice.
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'soulservice_app') THEN
-    CREATE ROLE soulservice_app LOGIN PASSWORD current_setting('app.soulservice_app_pw', true);
+    CREATE ROLE soulservice_app LOGIN PASSWORD 'soulservice_app_pw';
   END IF;
   IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'soulservice_migrate') THEN
-    CREATE ROLE soulservice_migrate LOGIN PASSWORD current_setting('app.soulservice_migrate_pw', true);
+    CREATE ROLE soulservice_migrate LOGIN PASSWORD 'soulservice_migrate_pw';
   END IF;
 END
 $$;

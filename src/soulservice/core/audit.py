@@ -37,7 +37,8 @@ async def log_tool_call(
                  args_hash, result_size, status, source_ip, source_client)
             VALUES
                 (:tenant_id, :user_id, :soul_id, :token_id, :tool_name,
-                 :args_hash, :result_size, :status, :source_ip::inet, :source_client)
+                 :args_hash, :result_size, :status,
+                 CAST(:source_ip AS inet), :source_client)
         """),
         {
             "tenant_id": str(tenant_id) if tenant_id else None,

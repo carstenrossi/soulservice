@@ -31,7 +31,8 @@ postgres-data/
 .DS_Store
 Thumbs.db
 
-# Alembic
+# Soul YAML files (contain personal character data)
+*.soul.yaml
 alembic/versions/__pycache__/
 
 # Coverage

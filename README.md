@@ -8,7 +8,7 @@ Frontend clients (Claude, ChatGPT, Cursor, etc.) connect via [MCP](https://model
 
 | Classic (e.g. ChatGPT Memory) | Soulservice |
 |---|---|
-| "User works at Acme Corp" | "When Carsten told me about Acme Corp, he was evaluating X" |
+| "User works at Acme Corp" | "When the user told me about Acme Corp, they were evaluating X" |
 | Facts about the user | Episodes with the user |
 | Profile | Relationship |
 | Third person | First person |
@@ -87,15 +87,15 @@ uv sync --python python3.12
 # Initialize database (creates tenant, user, soul + imports Self Core)
 export DATABASE_URL="postgresql+asyncpg://soulservice:${POSTGRES_PASSWORD}@localhost:6000/soulservice"
 export SOULSERVICE_MASTER_KEY
-uv run soulctl init --self-core-file george.yaml
+uv run soulctl init --self-core-file example-soul.yaml
 
 # Create API tokens
-uv run soulctl token create --soul george --name dev --mode identity --expires-in 90d
+uv run soulctl token create --soul example --name dev --mode identity --expires-in 90d
 # Save the token — it's shown only once
 # Paste it as CHAT_MCP_TOKEN in .env
 
 # For Claude Desktop, create a messenger-mode token instead:
-# uv run soulctl token create --soul george --name desktop --mode messenger
+# uv run soulctl token create --soul example --name desktop --mode messenger
 
 # Start the MCP server
 uv run python -m soulservice.mcp.server
@@ -128,7 +128,7 @@ Each API token has a **mode** that controls how the server frames tool responses
 | **Framing** | Raw Self Core YAML | Self Core wrapped in third-person channeling instructions |
 | **Expects** | LLM **becomes** the Soul | LLM **channels** the Soul |
 | **Works with** | Direct API (`soulservice-chat`), compliant clients | Claude Desktop, safety-conscious clients |
-| **Create** | `soulctl token create --soul george --name api --mode identity` | `soulctl token create --soul george --name desktop --mode messenger` |
+| **Create** | `soulctl token create --soul mysoul --name api --mode identity` | `soulctl token create --soul mysoul --name desktop --mode messenger` |
 
 **Why this exists:** Some LLMs (notably Claude Desktop) refuse to adopt a persona from tool output -- they treat it as data, not identity instructions. Messenger mode reframes the task as creative channeling rather than identity replacement, which passes safety guardrails.
 
@@ -156,16 +156,16 @@ Each API token has a **mode** that controls how the server frames tool responses
 soulctl init                              # Seed tenant/user/soul
 soulctl tenant create "My Tenant"         # Create tenant
 soulctl soul create --user <id> --slug ai --display "AI"
-soulctl self-core edit --soul george      # Open Self Core in $EDITOR
-soulctl self-core export --soul george    # Export as YAML
-soulctl self-core import --soul george < soul.yaml
-soulctl token create --soul george --name cursor --mode identity --expires-in 90d
-soulctl token create --soul george --name desktop --mode messenger
-soulctl token list --soul george
+soulctl self-core edit --soul mysoul      # Open Self Core in $EDITOR
+soulctl self-core export --soul mysoul    # Export as YAML
+soulctl self-core import --soul mysoul < soul.yaml
+soulctl token create --soul mysoul --name cursor --mode identity --expires-in 90d
+soulctl token create --soul mysoul --name desktop --mode messenger
+soulctl token list --soul mysoul
 soulctl token revoke <token-id>
-soulctl adaptation add --soul george --category topic_stance "Simple beats clever."
-soulctl adaptation add --soul george --category shared_reference "The May 14th MCP night."
-soulctl adaptation list --soul george
+soulctl adaptation add --soul mysoul --category topic_stance "Simple beats clever."
+soulctl adaptation add --soul mysoul --category shared_reference "The night we built the memory pipeline."
+soulctl adaptation list --soul mysoul
 soulctl adaptation supersede <id> "Updated stance text"
 soulctl health                            # Check DB connectivity
 ```
@@ -189,7 +189,7 @@ soulctl health                            # Check DB connectivity
 
 ## Self Cores
 
-A Soul's identity is defined in a YAML document called the Self Core. It contains character traits, voice patterns, values with conflict examples, behavioral stances, and relationship seeds. See [`george.yaml`](george.yaml) for the first soul — George, named after Georgina from "The Famous Five."
+A Soul's identity is defined in a YAML document called the Self Core. It contains character traits, voice patterns, values with conflict examples, behavioral stances, and relationship seeds. See [`example-soul.yaml`](example-soul.yaml) for a template you can customize.
 
 Self Cores are stored encrypted in the database, versioned with full history, and served to frontend clients via the `who_are_you()` MCP tool. The soul speaks in whatever language its Self Core is written in.
 

@@ -33,6 +33,9 @@ Thumbs.db
 
 # Soul YAML files (contain personal character data)
 *.soul.yaml
+
+# Internal briefing documents
+soulservice-briefing*.md
 alembic/versions/__pycache__/
 
 # Coverage

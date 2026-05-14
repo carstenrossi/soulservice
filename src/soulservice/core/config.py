@@ -18,6 +18,8 @@ class Settings(BaseSettings):
     soulservice_log_level: str = "info"
 
     mistral_api_key: str = ""
+    anthropic_api_key: str = ""
+    chat_mcp_token: str = ""
 
     # Crypto
     dek_cache_ttl_seconds: int = 3600  # 1 hour

@@ -19,6 +19,7 @@ dependencies = [
     "starlette>=0.46",
     "pyyaml>=6.0",
     "pgvector>=0.4",
+    "anthropic>=0.102.0",
 ]
 
 [project.optional-dependencies]
@@ -33,6 +34,7 @@ dev = [
 
 [project.scripts]
 soulctl = "soulservice.cli.main:cli"
+george = "soulservice.chat:main"
 
 [build-system]
 requires = ["hatchling"]

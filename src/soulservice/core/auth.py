@@ -15,6 +15,9 @@ TOKEN_PREFIX_LEN = 8
 TOKEN_RANDOM_BYTES = 32
 
 
+VALID_MODES = ("identity", "messenger")
+
+
 @dataclass(frozen=True)
 class TokenIdentity:
     """Resolved identity from a valid API token."""
@@ -24,6 +27,7 @@ class TokenIdentity:
     soul_id: UUID
     token_id: UUID
     scopes: list[str]
+    mode: str = "identity"
 
 
 def generate_token(env: str = "dev") -> tuple[str, str, str]:

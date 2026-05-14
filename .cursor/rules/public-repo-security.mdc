@@ -1,0 +1,28 @@
+---
+description: Security guardrails for a public repository — prevent secret leaks
+alwaysApply: true
+---
+
+# Public Repo Security
+
+This repository is **public**. Every commit is visible to the world.
+
+## Before Every Commit
+
+1. **No secrets.** Never commit API keys, tokens, passwords, or private keys. Check staged files for patterns like `sk-`, `sol_`, `Bearer `, `-----BEGIN`, base64-encoded keys, or anything that looks like a credential.
+2. **No .env files.** Only `.env.example` (with empty placeholder values) may be committed. The `.gitignore` uses `.env*` with an exception for `.env.example`.
+3. **No hardcoded credentials.** Connection strings, passwords, and keys must come from environment variables or config — never inline in code.
+4. **No PII in test fixtures.** Use obviously fake data in tests and seed scripts.
+
+## When Writing Code
+
+- Secrets go into environment variables, loaded via `soulservice.core.config.settings`.
+- Never log or print secret values, even partially (no `print(token[:8])`).
+- New env vars must be added to `.env.example` with an empty value.
+- Use `settings.some_key` — never `os.getenv()` directly for secrets.
+
+## If You Spot a Leak
+
+- Do NOT just delete the secret and commit again — it stays in git history.
+- Warn the user immediately and recommend rotating the credential.
+- Consider `git filter-repo` or BFG Repo-Cleaner if the secret reached a remote.

@@ -17,6 +17,7 @@ class ApiToken(SQLModel, table=True):
     token_prefix: str
     name: str
     scopes: list[str] = Field(default=["read", "write"])
+    mode: str = Field(default="identity")
     created_at: datetime = Field(default_factory=datetime.utcnow)
     last_used_at: datetime | None = None
     expires_at: datetime

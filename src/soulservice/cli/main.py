@@ -17,7 +17,7 @@ import click
 import yaml
 from sqlalchemy import text
 
-from soulservice.core.auth import generate_token
+from soulservice.core.auth import VALID_MODES, generate_token
 from soulservice.core.crypto import (
     decrypt_content,
     decrypt_dek,
@@ -534,7 +534,14 @@ def token():
 @click.option("--name", required=True, help="Token name (e.g. 'claude-desktop')")
 @click.option("--expires-in", "expires_in", default="90d", help="Expiry (e.g. '90d')")
 @click.option("--env", "env_name", default="dev", help="Token env prefix (dev/prod)")
-def token_create(soul_slug: str, name: str, expires_in: str, env_name: str):
+@click.option(
+    "--mode",
+    "token_mode",
+    default="identity",
+    type=click.Choice(VALID_MODES, case_sensitive=False),
+    help="identity = LLM becomes the soul; messenger = LLM channels the soul",
+)
+def token_create(soul_slug: str, name: str, expires_in: str, env_name: str, token_mode: str):
     """Generate a new API token for a soul."""
     days = int(expires_in.rstrip("d"))
     if days > 365:
@@ -561,8 +568,8 @@ def token_create(soul_slug: str, name: str, expires_in: str, env_name: str):
                 text(
                     "INSERT INTO api_tokens "
                     "(tenant_id, user_id, soul_id, token_hash, token_prefix, "
-                    "name, expires_at) "
-                    "VALUES (:tid, :uid, :sid, :hash, :prefix, :name, :exp)"
+                    "name, mode, expires_at) "
+                    "VALUES (:tid, :uid, :sid, :hash, :prefix, :name, :mode, :exp)"
                 ),
                 {
                     "tid": str(soul_row["tenant_id"]),
@@ -571,6 +578,7 @@ def token_create(soul_slug: str, name: str, expires_in: str, env_name: str):
                     "hash": token_hash,
                     "prefix": prefix,
                     "name": name,
+                    "mode": token_mode,
                     "exp": expires_at,
                 },
             )
@@ -580,6 +588,7 @@ def token_create(soul_slug: str, name: str, expires_in: str, env_name: str):
     full_token, expires_at = _run(_create())
     click.echo("Token created. Save it now – it will not be shown again.\n")
     click.echo(f"  Token:   {full_token}")
+    click.echo(f"  Mode:    {token_mode}")
     click.echo(f"  Expires: {expires_at.isoformat()}")
 
 
@@ -601,7 +610,7 @@ def token_list(soul_slug: str):
 
             tokens = await session.execute(
                 text(
-                    "SELECT id, token_prefix, name, created_at, last_used_at, "
+                    "SELECT id, token_prefix, name, mode, created_at, last_used_at, "
                     "expires_at, revoked_at "
                     "FROM api_tokens WHERE soul_id = :sid ORDER BY created_at DESC"
                 ),
@@ -612,8 +621,9 @@ def token_list(soul_slug: str):
     for t in _run(_list()):
         status = "REVOKED" if t["revoked_at"] else "active"
         last_used = str(t["last_used_at"] or "never")
+        mode = t.get("mode", "identity")
         click.echo(
-            f"  {t['token_prefix']}...  {t['name']:20s}  {status:8s}  "
+            f"  {t['token_prefix']}...  {t['name']:20s}  {mode:10s}  {status:8s}  "
             f"expires={t['expires_at']}  last_used={last_used}"
         )
 

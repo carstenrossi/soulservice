@@ -105,6 +105,8 @@ CREATE TABLE api_tokens (
   token_prefix TEXT NOT NULL,
   name TEXT NOT NULL,
   scopes TEXT[] NOT NULL DEFAULT ARRAY['read','write'],
+  mode VARCHAR(16) NOT NULL DEFAULT 'identity'
+    CHECK (mode IN ('identity', 'messenger')),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   last_used_at TIMESTAMPTZ,
   expires_at TIMESTAMPTZ NOT NULL,

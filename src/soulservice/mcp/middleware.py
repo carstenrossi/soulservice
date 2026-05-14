@@ -25,7 +25,7 @@ async def resolve_bearer_token(authorization: str | None) -> TokenIdentity | Non
         rows = await session.execute(
             text("""
                 SELECT id, tenant_id, user_id, soul_id, token_hash, scopes,
-                       expires_at, revoked_at
+                       expires_at, revoked_at, mode
                 FROM api_tokens
                 WHERE token_prefix = :prefix
                   AND revoked_at IS NULL
@@ -56,6 +56,7 @@ async def resolve_bearer_token(authorization: str | None) -> TokenIdentity | Non
             soul_id=UUID(str(row["soul_id"])),
             token_id=UUID(str(row["id"])),
             scopes=list(row["scopes"]),
+            mode=row.get("mode", "identity") or "identity",
         )
 
     return None

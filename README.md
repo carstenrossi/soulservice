@@ -39,6 +39,7 @@ Tool Handlers (RLS enforces isolation)
 - **Multi-tenant from day one.** Every row belongs to a tenant. Cross-tenant access is structurally impossible (RLS).
 - **Envelope encryption.** One master key (in env), one DEK per soul. Master key rotation re-encrypts DEKs, not data.
 - **Separation of identity and model.** The frontend LLM is swappable. Souls persist.
+- **Two token modes.** Identity mode (LLM becomes the soul) and messenger mode (LLM channels the soul) — same server, different framing, chosen per client.
 - **Review gate against drift.** Learning doesn't happen automatically — proposals go through human review.
 
 ## Tech Stack
@@ -77,10 +78,13 @@ export DATABASE_URL="postgresql+asyncpg://soulservice:${POSTGRES_PASSWORD}@local
 export SOULSERVICE_MASTER_KEY
 uv run soulctl init --self-core-file george.yaml
 
-# Create an API token
-uv run soulctl token create --soul george --name dev --expires-in 90d
+# Create API tokens
+uv run soulctl token create --soul george --name dev --mode identity --expires-in 90d
 # Save the token — it's shown only once
 # Paste it as CHAT_MCP_TOKEN in .env
+
+# For Claude Desktop, create a messenger-mode token instead:
+# uv run soulctl token create --soul george --name desktop --mode messenger
 
 # Start the MCP server
 uv run python -m soulservice.mcp.server
@@ -104,6 +108,28 @@ src/soulservice/
 └── web/            # Phase 3: FastAPI + HTMX admin UI
 ```
 
+## Token Modes: Identity vs. Messenger
+
+Each API token has a **mode** that controls how the server frames tool responses:
+
+| | Identity Mode | Messenger Mode |
+|---|---|---|
+| **Framing** | Raw Self Core YAML | Self Core wrapped in third-person channeling instructions |
+| **Expects** | LLM **becomes** the Soul | LLM **channels** the Soul |
+| **Works with** | Direct API (`soulservice-chat`), compliant clients | Claude Desktop, safety-conscious clients |
+| **Create** | `soulctl token create --soul george --name api --mode identity` | `soulctl token create --soul george --name desktop --mode messenger` |
+
+**Why this exists:** Some LLMs (notably Claude Desktop) refuse to adopt a persona from tool output -- they treat it as data, not identity instructions. Messenger mode reframes the task as creative channeling rather than identity replacement, which passes safety guardrails.
+
+### Using with Claude Desktop
+
+1. Configure the MCP server in `claude_desktop_config.json` with a **messenger-mode** token
+2. In your first message, ask Claude to call the tools:
+   > "Bitte rufe who_are_you und whats_our_history auf."
+3. Claude will load the Soul's profile and channel its voice for the rest of the session
+
+**Note:** Claude Desktop only adopts a Soul's voice when triggered per session. Persistent instructions (Custom Instructions / Project Instructions) that tell Claude to become someone else are rejected by its safety layer. The per-session trigger works because Claude treats it as a situational task, not an identity change.
+
 ## MCP Tools (Phase 1)
 
 | Tool | Description |
@@ -122,7 +148,8 @@ soulctl soul create --user <id> --slug ai --display "AI"
 soulctl self-core edit --soul george      # Open Self Core in $EDITOR
 soulctl self-core export --soul george    # Export as YAML
 soulctl self-core import --soul george < soul.yaml
-soulctl token create --soul george --name cursor --expires-in 90d
+soulctl token create --soul george --name cursor --mode identity --expires-in 90d
+soulctl token create --soul george --name desktop --mode messenger
 soulctl token list --soul george
 soulctl token revoke <token-id>
 soulctl health                            # Check DB connectivity

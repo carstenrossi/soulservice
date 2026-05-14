@@ -1,0 +1,41 @@
+---
+description: Enforce English for all code, comments, prompts, and UI strings
+alwaysApply: true
+---
+
+# Language: English Everywhere in Code
+
+All code-facing text MUST be in English:
+
+- Variable names, function names, class names
+- Code comments and docstrings
+- Error messages and log output
+- CLI output and terminal prompts
+- System prompts and developer-facing prompt text
+- Test strings and fixture data
+- README and developer documentation
+
+## Exceptions
+
+- **Soul YAML files** (e.g. `george.yaml`): Souls speak the language of their user. Self Core content stays in the soul's language.
+- **Soul-voice output** in tool handlers: If a tool returns text *as the soul*, it uses the soul's language. Add a comment explaining this.
+- **`soulservice-briefing.md`**: Internal concept document, stays in German.
+
+## Examples
+
+```python
+# BAD
+print("Fehler: Token nicht gesetzt.")
+
+# GOOD
+print("Error: token not set.")
+```
+
+```python
+# BAD — comment in German
+# Lade den Self Core aus der Datenbank
+self_core = await get_self_core(session, soul_id)
+
+# GOOD
+self_core = await get_self_core(session, soul_id)
+```

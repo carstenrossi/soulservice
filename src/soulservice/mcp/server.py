@@ -71,7 +71,7 @@ async def who_are_you() -> str:
         return "Error: not authenticated. Provide a valid Bearer token."
 
     async with get_scoped_session(identity.tenant_id, identity.soul_id) as session:
-        result = await get_self_core(session, identity.soul_id)
+        result = await get_self_core(session, identity.soul_id, mode=identity.mode)
 
         await log_tool_call(
             session,
@@ -94,7 +94,9 @@ async def whats_our_history() -> str:
         return "Error: not authenticated. Provide a valid Bearer token."
 
     async with get_scoped_session(identity.tenant_id, identity.soul_id) as session:
-        result = await get_relationship_overview(session, identity.soul_id)
+        result = await get_relationship_overview(
+            session, identity.soul_id, mode=identity.mode
+        )
 
         await log_tool_call(
             session,

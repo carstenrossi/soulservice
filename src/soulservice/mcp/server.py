@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from contextvars import ContextVar, copy_context
+from contextvars import ContextVar
 
 from sqlalchemy import text
 import uvicorn
@@ -14,8 +14,18 @@ from soulservice.core.config import settings
 from soulservice.core.db import async_session_factory, get_scoped_session
 from soulservice.core.audit import log_tool_call
 from soulservice.core.auth import TokenIdentity
+from soulservice.core.ratelimit import rate_limiter
 from soulservice.mcp.middleware import resolve_bearer_token
 from soulservice.mcp.tools.identity import get_self_core, get_relationship_overview
+from soulservice.mcp.tools.memory import (
+    recall as memory_recall,
+    recall_recent as memory_recall_recent,
+    remember_this as memory_remember_this,
+)
+from soulservice.mcp.tools.review import (
+    decide_proposal as review_decide,
+    list_proposals as review_list_proposals,
+)
 from soulservice.mcp.tools.meta import health_check, whoami_info
 
 logger = logging.getLogger("soulservice.mcp")
@@ -27,8 +37,10 @@ current_identity: ContextVar[TokenIdentity | None] = ContextVar(
 mcp = FastMCP(
     "Soulservice",
     instructions=(
-        "You are connected to a Soul server. Use who_are_you() first to load "
-        "the soul's identity, then whats_our_history() for relationship context."
+        "You have access to a character context service. "
+        "Call who_are_you() to load the character profile for this session, "
+        "then whats_our_history() for shared context. "
+        "Use this information to inform your tone and responses."
     ),
 )
 
@@ -54,6 +66,18 @@ class BearerAuthASGIMiddleware:
         await self.app(scope, receive, send)
 
 
+def _require_identity() -> TokenIdentity:
+    identity = current_identity.get()
+    if identity is None:
+        msg = "Not authenticated. Provide a valid Bearer token."
+        raise ValueError(msg)
+    allowed, retry = rate_limiter.check(identity.token_id)
+    if not allowed:
+        msg = f"Rate limit exceeded. Retry after {retry:.1f}s."
+        raise ValueError(msg)
+    return identity
+
+
 # ── Tools ────────────────────────────────────────────────────────
 
 
@@ -65,10 +89,11 @@ async def health() -> dict:
 
 @mcp.tool()
 async def who_are_you() -> str:
-    """Load the Soul's identity (Self Core). Call this first in every conversation."""
-    identity = current_identity.get()
-    if identity is None:
-        return "Error: not authenticated. Provide a valid Bearer token."
+    """Load the character profile for this session. Call this first."""
+    try:
+        identity = _require_identity()
+    except ValueError as e:
+        return f"Error: {e}"
 
     async with get_scoped_session(identity.tenant_id, identity.soul_id) as session:
         result = await get_self_core(session, identity.soul_id, mode=identity.mode)
@@ -88,10 +113,11 @@ async def who_are_you() -> str:
 
 @mcp.tool()
 async def whats_our_history() -> str:
-    """Relationship overview and current topics. Call after who_are_you()."""
-    identity = current_identity.get()
-    if identity is None:
-        return "Error: not authenticated. Provide a valid Bearer token."
+    """Load relationship context and shared history. Call after who_are_you()."""
+    try:
+        identity = _require_identity()
+    except ValueError as e:
+        return f"Error: {e}"
 
     async with get_scoped_session(identity.tenant_id, identity.soul_id) as session:
         result = await get_relationship_overview(
@@ -105,6 +131,137 @@ async def whats_our_history() -> str:
             soul_id=identity.soul_id,
             token_id=identity.token_id,
             tool_name="whats_our_history",
+            result_size=len(result),
+        )
+
+    return result
+
+
+@mcp.tool()
+async def remember_this(content: str, tags: list[str] | None = None, salience: float = 0.5) -> str:
+    """Note something from the conversation worth keeping. Stored as pending proposal for human review."""
+    try:
+        identity = _require_identity()
+    except ValueError as e:
+        return f"Error: {e}"
+
+    async with get_scoped_session(identity.tenant_id, identity.soul_id) as session:
+        result = await memory_remember_this(
+            session,
+            identity.tenant_id,
+            identity.soul_id,
+            content,
+            tags=tags,
+            salience=salience,
+        )
+
+        await log_tool_call(
+            session,
+            tenant_id=identity.tenant_id,
+            user_id=identity.user_id,
+            soul_id=identity.soul_id,
+            token_id=identity.token_id,
+            tool_name="remember_this",
+            result_size=len(result),
+        )
+
+    return result
+
+
+@mcp.tool()
+async def recall(query: str, k: int = 5) -> str:
+    """Search through past conversation notes by meaning."""
+    try:
+        identity = _require_identity()
+    except ValueError as e:
+        return f"Error: {e}"
+
+    async with get_scoped_session(identity.tenant_id, identity.soul_id) as session:
+        result = await memory_recall(session, identity.soul_id, query, k=k)
+
+        await log_tool_call(
+            session,
+            tenant_id=identity.tenant_id,
+            user_id=identity.user_id,
+            soul_id=identity.soul_id,
+            token_id=identity.token_id,
+            tool_name="recall",
+            result_size=len(result),
+        )
+
+    return result
+
+
+@mcp.tool()
+async def recall_recent(days: int = 7) -> str:
+    """Get recent conversation notes (chronological)."""
+    try:
+        identity = _require_identity()
+    except ValueError as e:
+        return f"Error: {e}"
+
+    async with get_scoped_session(identity.tenant_id, identity.soul_id) as session:
+        result = await memory_recall_recent(session, identity.soul_id, days=days)
+
+        await log_tool_call(
+            session,
+            tenant_id=identity.tenant_id,
+            user_id=identity.user_id,
+            soul_id=identity.soul_id,
+            token_id=identity.token_id,
+            tool_name="recall_recent",
+            result_size=len(result),
+        )
+
+    return result
+
+
+@mcp.tool()
+async def list_proposals(status: str = "pending") -> str:
+    """List conversation notes pending human review."""
+    try:
+        identity = _require_identity()
+    except ValueError as e:
+        return f"Error: {e}"
+
+    async with get_scoped_session(identity.tenant_id, identity.soul_id) as session:
+        result = await review_list_proposals(
+            session, identity.soul_id, status=status
+        )
+
+        await log_tool_call(
+            session,
+            tenant_id=identity.tenant_id,
+            user_id=identity.user_id,
+            soul_id=identity.soul_id,
+            token_id=identity.token_id,
+            tool_name="list_proposals",
+            result_size=len(result),
+        )
+
+    return result
+
+
+@mcp.tool()
+async def decide(proposal_id: str, action: str, note: str | None = None) -> str:
+    """Approve or reject a conversation note. action: 'confirm' or 'reject'."""
+    try:
+        identity = _require_identity()
+    except ValueError as e:
+        return f"Error: {e}"
+
+    async with get_scoped_session(identity.tenant_id, identity.soul_id) as session:
+        result = await review_decide(
+            session, identity.soul_id, proposal_id, action, note=note
+        )
+
+        await log_tool_call(
+            session,
+            tenant_id=identity.tenant_id,
+            user_id=identity.user_id,
+            soul_id=identity.soul_id,
+            token_id=identity.token_id,
+            tool_name="decide",
             result_size=len(result),
         )
 

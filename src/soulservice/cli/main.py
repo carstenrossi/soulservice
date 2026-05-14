@@ -27,6 +27,7 @@ from soulservice.core.crypto import (
     generate_dek,
 )
 from soulservice.core.db import async_session_factory
+from soulservice.core.embeddings import embed_text
 from soulservice.models.adaptation import ADAPTATION_CATEGORIES
 
 # ── Helpers ──────────────────────────────────────────────────────
@@ -939,6 +940,286 @@ def adaptation_supersede(adaptation_id: str, new_content: str, confidence: float
 
     new_id = _run(_supersede())
     click.echo(f"Superseded. New adaptation: {new_id}")
+
+
+# ── Proposals ─────────────────────────────────────────────────
+
+
+@cli.group()
+def proposals():
+    """Review memory proposals."""
+
+
+@proposals.command("list")
+@click.option("--soul", "soul_slug", required=True, help="Soul slug")
+@click.option("--status", "filter_status", default="pending", help="Filter by status")
+def proposals_list(soul_slug: str, filter_status: str):
+    """List memory proposals for a soul."""
+
+    async def _list():
+        async with async_session_factory() as session:
+            row = await session.execute(
+                text("SELECT id FROM souls WHERE slug = :slug"),
+                {"slug": soul_slug},
+            )
+            soul_row = row.mappings().first()
+            if not soul_row:
+                click.echo(f"Error: soul '{soul_slug}' not found.", err=True)
+                raise SystemExit(1)
+
+            soul_id = soul_row["id"]
+
+            dek_row = await session.execute(
+                text("SELECT dek_encrypted FROM soul_keys WHERE soul_id = :sid"),
+                {"sid": str(soul_id)},
+            )
+            dek_result = dek_row.mappings().first()
+            dek = decrypt_dek(bytes(dek_result["dek_encrypted"]))
+
+            rows = await session.execute(
+                text(
+                    "SELECT id, content_encrypted, content_nonce, created_at, "
+                    "salience, tags, injection_flags, source_client "
+                    "FROM memories WHERE soul_id = :sid AND status = :st "
+                    "ORDER BY created_at DESC LIMIT 50"
+                ),
+                {"sid": str(soul_id), "st": filter_status},
+            )
+            results = []
+            for m in rows.mappings().all():
+                plaintext = decrypt_content(
+                    bytes(m["content_encrypted"]),
+                    bytes(m["content_nonce"]),
+                    dek,
+                )
+                results.append({**m, "content": plaintext})
+            return results
+
+    memories = _run(_list())
+    if not memories:
+        click.echo(f"No {filter_status} proposals.")
+        return
+
+    click.echo(f"{len(memories)} {filter_status} proposal(s):\n")
+    for m in memories:
+        mid = str(m["id"])[:8]
+        created = m["created_at"].strftime("%Y-%m-%d %H:%M")
+        flags = m["injection_flags"] or []
+        flag_str = f"  [FLAGGED: {', '.join(flags)}]" if flags else ""
+        tags = m["tags"] or []
+        tag_str = f"  tags={tags}" if tags else ""
+        preview = m["content"][:120].replace("\n", " ")
+        if len(m["content"]) > 120:
+            preview += "..."
+        click.echo(
+            f"  {mid}...  {created}  salience={m['salience']:.1f}"
+            f"{tag_str}{flag_str}\n    {preview}\n"
+        )
+
+
+@proposals.command("decide")
+@click.argument("memory_id")
+@click.option(
+    "--action",
+    required=True,
+    type=click.Choice(["confirm", "reject"], case_sensitive=False),
+)
+@click.option("--note", default=None, help="Optional note")
+def proposals_decide(memory_id: str, action: str, note: str | None):
+    """Confirm or reject a memory proposal."""
+
+    async def _decide():
+        async with async_session_factory() as session:
+            row = await session.execute(
+                text("SELECT id, status FROM memories WHERE id = :mid"),
+                {"mid": memory_id},
+            )
+            result = row.mappings().first()
+            if result is None:
+                click.echo("Error: memory not found.", err=True)
+                raise SystemExit(1)
+            if result["status"] != "pending":
+                click.echo(f"Error: memory is '{result['status']}', not pending.", err=True)
+                raise SystemExit(1)
+
+            new_status = "confirmed" if action == "confirm" else "rejected"
+            await session.execute(
+                text("UPDATE memories SET status = :st WHERE id = :mid"),
+                {"st": new_status, "mid": memory_id},
+            )
+            await session.commit()
+            return new_status
+
+    status = _run(_decide())
+    click.echo(f"Memory {memory_id[:8]}... {status}.")
+
+
+# ── Memory ────────────────────────────────────────────────────
+
+
+@cli.group()
+def memory():
+    """Inspect and manage memories."""
+
+
+@memory.command("search")
+@click.option("--soul", "soul_slug", required=True, help="Soul slug")
+@click.option("-k", "k", default=5, help="Number of results")
+@click.argument("query")
+def memory_search(soul_slug: str, k: int, query: str):
+    """Semantic search through confirmed memories."""
+
+    async def _search():
+        async with async_session_factory() as session:
+            row = await session.execute(
+                text("SELECT id FROM souls WHERE slug = :slug"),
+                {"slug": soul_slug},
+            )
+            soul_row = row.mappings().first()
+            if not soul_row:
+                click.echo(f"Error: soul '{soul_slug}' not found.", err=True)
+                raise SystemExit(1)
+
+            soul_id = soul_row["id"]
+
+            dek_row = await session.execute(
+                text("SELECT dek_encrypted FROM soul_keys WHERE soul_id = :sid"),
+                {"sid": str(soul_id)},
+            )
+            dek = decrypt_dek(bytes(dek_row.mappings().first()["dek_encrypted"]))
+
+            query_embedding = await embed_text(query)
+            embedding_str = "[" + ",".join(str(v) for v in query_embedding) + "]"
+
+            rows = await session.execute(
+                text(
+                    "SELECT id, content_encrypted, content_nonce, created_at, "
+                    "salience, tags, embedding <=> CAST(:qemb AS vector) AS distance "
+                    "FROM memories "
+                    "WHERE soul_id = :sid AND status = 'confirmed' "
+                    "ORDER BY embedding <=> CAST(:qemb AS vector) "
+                    "LIMIT :k"
+                ),
+                {"sid": str(soul_id), "qemb": embedding_str, "k": k},
+            )
+            results = []
+            for m in rows.mappings().all():
+                plaintext = decrypt_content(
+                    bytes(m["content_encrypted"]),
+                    bytes(m["content_nonce"]),
+                    dek,
+                )
+                results.append({**m, "content": plaintext})
+            return results
+
+    memories = _run(_search())
+    if not memories:
+        click.echo("No matching memories.")
+        return
+
+    for m in memories:
+        mid = str(m["id"])[:8]
+        created = m["created_at"].strftime("%Y-%m-%d")
+        dist = f"dist={m['distance']:.3f}" if m.get("distance") is not None else ""
+        click.echo(
+            f"  {mid}...  {created}  salience={m['salience']:.1f}  {dist}"
+        )
+        click.echo(f"    {m['content'][:200]}")
+        click.echo()
+
+
+@memory.command("list")
+@click.option("--soul", "soul_slug", required=True, help="Soul slug")
+@click.option("--recent", "days", default=7, help="Number of days to look back")
+@click.option("--status", "filter_status", default="confirmed", help="Filter by status")
+def memory_list_cmd(soul_slug: str, days: int, filter_status: str):
+    """List recent memories for a soul."""
+
+    async def _list():
+        from datetime import timedelta as td
+        async with async_session_factory() as session:
+            row = await session.execute(
+                text("SELECT id FROM souls WHERE slug = :slug"),
+                {"slug": soul_slug},
+            )
+            soul_row = row.mappings().first()
+            if not soul_row:
+                click.echo(f"Error: soul '{soul_slug}' not found.", err=True)
+                raise SystemExit(1)
+
+            soul_id = soul_row["id"]
+
+            dek_row = await session.execute(
+                text("SELECT dek_encrypted FROM soul_keys WHERE soul_id = :sid"),
+                {"sid": str(soul_id)},
+            )
+            dek = decrypt_dek(bytes(dek_row.mappings().first()["dek_encrypted"]))
+
+            cutoff = datetime.now(timezone.utc) - td(days=days)
+            rows = await session.execute(
+                text(
+                    "SELECT id, content_encrypted, content_nonce, created_at, "
+                    "salience, tags, status "
+                    "FROM memories WHERE soul_id = :sid AND status = :st "
+                    "AND created_at >= :cutoff "
+                    "ORDER BY created_at DESC LIMIT 50"
+                ),
+                {"sid": str(soul_id), "st": filter_status, "cutoff": cutoff},
+            )
+            results = []
+            for m in rows.mappings().all():
+                plaintext = decrypt_content(
+                    bytes(m["content_encrypted"]),
+                    bytes(m["content_nonce"]),
+                    dek,
+                )
+                results.append({**m, "content": plaintext})
+            return results
+
+    memories = _run(_list())
+    if not memories:
+        click.echo("No memories found.")
+        return
+
+    click.echo(f"{len(memories)} memories (last {days} days):\n")
+    for m in memories:
+        mid = str(m["id"])[:8]
+        created = m["created_at"].strftime("%Y-%m-%d %H:%M")
+        preview = m["content"][:120].replace("\n", " ")
+        if len(m["content"]) > 120:
+            preview += "..."
+        click.echo(f"  {mid}...  {created}  salience={m['salience']:.1f}")
+        click.echo(f"    {preview}\n")
+
+
+@memory.command("forget")
+@click.argument("memory_id")
+@click.confirmation_option(prompt="Mark this memory for forgetting?")
+def memory_forget(memory_id: str):
+    """Mark a confirmed memory as forgotten."""
+
+    async def _forget():
+        async with async_session_factory() as session:
+            row = await session.execute(
+                text("SELECT id, status FROM memories WHERE id = :mid"),
+                {"mid": memory_id},
+            )
+            result = row.mappings().first()
+            if result is None:
+                click.echo("Error: memory not found.", err=True)
+                raise SystemExit(1)
+            if result["status"] not in ("confirmed", "pending"):
+                click.echo(f"Error: memory is '{result['status']}'.", err=True)
+                raise SystemExit(1)
+
+            await session.execute(
+                text("UPDATE memories SET status = 'forgotten' WHERE id = :mid"),
+                {"mid": memory_id},
+            )
+            await session.commit()
+
+    _run(_forget())
+    click.echo(f"Memory {memory_id[:8]}... marked as forgotten.")
 
 
 # ── Health ───────────────────────────────────────────────────────

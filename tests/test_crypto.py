@@ -20,7 +20,7 @@ def test_dek_roundtrip():
 
 def test_content_roundtrip():
     dek = generate_dek()
-    plaintext = "George erinnert sich an den Nachmittag im Mai."
+    plaintext = "George remembers the afternoon in May."
     ct, nonce = encrypt_content(plaintext, dek)
     result = decrypt_content(ct, nonce, dek)
     assert result == plaintext

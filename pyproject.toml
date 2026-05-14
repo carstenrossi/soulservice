@@ -34,7 +34,7 @@ dev = [
 
 [project.scripts]
 soulctl = "soulservice.cli.main:cli"
-george = "soulservice.chat:main"
+soulservice-chat = "soulservice.chat:main"
 
 [build-system]
 requires = ["hatchling"]

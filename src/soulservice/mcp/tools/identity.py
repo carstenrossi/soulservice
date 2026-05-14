@@ -58,6 +58,8 @@ async def get_relationship_overview(session: AsyncSession, soul_id: UUID) -> str
     Phase 1: returns a static placeholder.
     Phase 2+: will query memories and build a dynamic summary.
     """
+    # Phase 1 placeholder in the soul's language (German for George).
+    # Phase 2+ will build this dynamically from memories.
     return (
         "Wir stehen am Anfang. Ich kenne dich aus dem, was du mir in meinen "
         "Self Core mitgegeben hast, aber wir haben noch keine gemeinsamen "

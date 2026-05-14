@@ -12,7 +12,8 @@ build/
 venv/
 
 # Secrets – NEVER commit
-.env
+.env*
+!.env.example
 *.pem
 *.key
 
@@ -38,5 +39,7 @@ htmlcov/
 .coverage
 .coverage.*
 
-# mypy
+# Caches
 .mypy_cache/
+.ruff_cache/
+.pytest_cache/

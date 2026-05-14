@@ -33,6 +33,7 @@ Thumbs.db
 
 # Soul YAML files (contain personal character data)
 *.soul.yaml
+george.yaml
 alembic/versions/__pycache__/
 
 # Coverage

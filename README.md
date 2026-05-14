@@ -41,6 +41,17 @@ Tool Handlers (RLS enforces isolation)
 - **Separation of identity and model.** The frontend LLM is swappable. Souls persist.
 - **Two token modes.** Identity mode (LLM becomes the soul) and messenger mode (LLM channels the soul) — same server, different framing, chosen per client.
 - **Review gate against drift.** Learning doesn't happen automatically — proposals go through human review.
+- **Neuroplasticity.** Souls grow through experience. The Self Core (values, voice) is the constitution; the Adaptation Layer (opinions, relationship depth, shared references) accumulates organically from memories.
+
+## The Three-Layer Model
+
+| Layer | What it holds | How it changes | Served via |
+|---|---|---|---|
+| **Self Core** | Values, voice, prohibitions, origin | Only by human, explicitly | `who_are_you()` |
+| **Adaptations** | Learned stances, references, depth | Dream Phase (auto) or manual | `who_are_you()` (appended) |
+| **Memories** | Individual episodes | Captured in conversation | `recall()` (Phase 2) |
+
+The Self Core is the DNA. Adaptations are neuroplasticity. Memories are episodes. A Soul after 500 conversations is the same person in values, but different in depth, reflexes, and references.
 
 ## Tech Stack
 
@@ -134,7 +145,7 @@ Each API token has a **mode** that controls how the server frames tool responses
 
 | Tool | Description |
 |---|---|
-| `who_are_you()` | Load the Soul's identity (Self Core). Call first. |
+| `who_are_you()` | Load the Soul's identity (Self Core + Adaptations). Call first. |
 | `whats_our_history()` | Relationship overview and current topics. |
 | `whoami()` | Which Soul, Tenant, User is this token bound to? |
 | `health()` | Server health check. |
@@ -152,6 +163,10 @@ soulctl token create --soul george --name cursor --mode identity --expires-in 90
 soulctl token create --soul george --name desktop --mode messenger
 soulctl token list --soul george
 soulctl token revoke <token-id>
+soulctl adaptation add --soul george --category topic_stance "Simple beats clever."
+soulctl adaptation add --soul george --category shared_reference "The May 14th MCP night."
+soulctl adaptation list --soul george
+soulctl adaptation supersede <id> "Updated stance text"
 soulctl health                            # Check DB connectivity
 ```
 
@@ -166,10 +181,10 @@ soulctl health                            # Check DB connectivity
 
 ## Roadmap
 
-- **Phase 1 (current):** MCP server, Self Core, CLI, chat interface, security baseline
+- **Phase 1 (current):** MCP server, Self Core, Adaptation Layer, CLI, chat interface, security baseline
 - **Phase 2:** Embeddings (Mistral), `recall()`, `remember_this()`, proposals, review workflow
 - **Phase 3:** Facts, properties, Web UI (FastAPI + HTMX)
-- **Phase 4:** Nightly consolidation, introspection
+- **Phase 4:** Dream Phase -- nightly job extracts adaptations from memories automatically, introspection
 - **Phase 5+:** OAuth, key rotation, local embeddings, multi-soul awareness
 
 ## Self Cores
@@ -180,7 +195,7 @@ Self Cores are stored encrypted in the database, versioned with full history, an
 
 ## License
 
-TBD
+[PolyForm Noncommercial 1.0.0](LICENSE.md) -- free for personal use, research, education, and non-commercial projects. For commercial use, [contact the author](https://github.com/carstenrossi).
 
 ---
 

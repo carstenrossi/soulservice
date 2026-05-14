@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import defaultdict
 from uuid import UUID
 
 from sqlalchemy import text
@@ -78,6 +79,10 @@ async def get_self_core(
         dek,
     )
 
+    adaptations = await _get_active_adaptations(session, soul_id, dek)
+    if adaptations:
+        content = content.rstrip() + "\n\n" + _format_adaptations(adaptations)
+
     if mode == "messenger":
         soul_name = await _get_soul_display_name(session, soul_id)
         return MESSENGER_SELF_CORE_PREFIX.format(soul_name=soul_name) + content
@@ -109,3 +114,68 @@ async def get_relationship_overview(
         )
 
     return first_person
+
+
+# ── Adaptation Layer ──────────────────────────────────────────
+
+CATEGORY_LABELS = {
+    "relationship_depth": "relationship_depth",
+    "topic_stance": "topic_stances",
+    "behavioral_refinement": "behavioral_notes",
+    "shared_reference": "shared_references",
+    "emotional_calibration": "emotional_calibration",
+}
+
+
+async def _get_active_adaptations(
+    session: AsyncSession, soul_id: UUID, dek: bytes
+) -> list[dict]:
+    """Load and decrypt all active adaptations for a soul."""
+    rows = await session.execute(
+        text("""
+            SELECT category, content_encrypted, content_nonce, confidence
+            FROM soul_adaptations
+            WHERE soul_id = :sid AND status = 'active'
+            ORDER BY category, created_at
+        """),
+        {"sid": str(soul_id)},
+    )
+    results = []
+    for row in rows.mappings().all():
+        plaintext = decrypt_content(
+            bytes(row["content_encrypted"]),
+            bytes(row["content_nonce"]),
+            dek,
+        )
+        results.append({
+            "category": row["category"],
+            "content": plaintext,
+            "confidence": row["confidence"],
+        })
+    return results
+
+
+def _format_adaptations(adaptations: list[dict]) -> str:
+    """Format adaptations as a YAML-like growth block appended to Self Core."""
+    by_category: dict[str, list[str]] = defaultdict(list)
+    for a in adaptations:
+        by_category[a["category"]].append(a["content"])
+
+    lines = [
+        "# ── Growth (learned from experience) ──",
+        "growth:",
+    ]
+    for category, items in by_category.items():
+        label = CATEGORY_LABELS.get(category, category)
+        if len(items) == 1:
+            indent = "    "
+            lines.append(f"  {label}: >")
+            for line in items[0].strip().splitlines():
+                lines.append(f"{indent}{line}")
+        else:
+            lines.append(f"  {label}:")
+            for item in items:
+                text_oneline = " ".join(item.strip().splitlines())
+                lines.append(f'    - "{text_oneline}"')
+
+    return "\n".join(lines) + "\n"

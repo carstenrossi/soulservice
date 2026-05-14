@@ -162,10 +162,29 @@ CREATE TABLE soul_properties (
 
 CREATE INDEX soul_properties_value_idx ON soul_properties USING gin (value);
 
-CREATE TABLE proposals (
+CREATE TABLE soul_adaptations (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
   soul_id UUID NOT NULL REFERENCES souls(id) ON DELETE CASCADE,
+  category TEXT NOT NULL
+    CHECK (category IN (
+      'relationship_depth', 'topic_stance', 'behavioral_refinement',
+      'shared_reference', 'emotional_calibration'
+    )),
+  content_encrypted BYTEA NOT NULL,
+  content_nonce BYTEA NOT NULL,
+  confidence FLOAT NOT NULL DEFAULT 0.5,
+  source TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  superseded_by UUID REFERENCES soul_adaptations(id),
+  status TEXT NOT NULL DEFAULT 'active'
+    CHECK (status IN ('active', 'superseded', 'rejected'))
+);
+
+CREATE INDEX soul_adaptations_active_idx
+  ON soul_adaptations (soul_id, status) WHERE status = 'active';
+
+CREATE TABLE proposals (
   kind TEXT NOT NULL,
   payload_encrypted BYTEA NOT NULL,
   payload_nonce BYTEA NOT NULL,
@@ -201,6 +220,7 @@ GRANT SELECT, INSERT, UPDATE ON api_tokens TO soulservice_app;
 GRANT SELECT, INSERT, UPDATE ON memories TO soulservice_app;
 GRANT SELECT, INSERT, UPDATE ON facts TO soulservice_app;
 GRANT SELECT, INSERT, UPDATE ON soul_properties TO soulservice_app;
+GRANT SELECT, INSERT, UPDATE ON soul_adaptations TO soulservice_app;
 GRANT SELECT, INSERT, UPDATE ON proposals TO soulservice_app;
 GRANT SELECT, INSERT ON audit_log TO soulservice_app;
 GRANT USAGE ON SEQUENCE audit_log_id_seq TO soulservice_app;
@@ -214,6 +234,7 @@ REVOKE UPDATE, DELETE ON audit_log FROM soulservice_app;
 ALTER TABLE memories ENABLE ROW LEVEL SECURITY;
 ALTER TABLE facts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE soul_properties ENABLE ROW LEVEL SECURITY;
+ALTER TABLE soul_adaptations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE proposals ENABLE ROW LEVEL SECURITY;
 ALTER TABLE soul_keys ENABLE ROW LEVEL SECURITY;
 ALTER TABLE soul_self_cores ENABLE ROW LEVEL SECURITY;
@@ -234,6 +255,13 @@ CREATE POLICY tenant_soul_isolation ON facts
   );
 
 CREATE POLICY tenant_soul_isolation ON soul_properties
+  FOR ALL TO soulservice_app
+  USING (
+    tenant_id = current_setting('app.current_tenant')::uuid
+    AND soul_id = current_setting('app.current_soul')::uuid
+  );
+
+CREATE POLICY tenant_soul_isolation ON soul_adaptations
   FOR ALL TO soulservice_app
   USING (
     tenant_id = current_setting('app.current_tenant')::uuid

@@ -27,6 +27,7 @@ from soulservice.core.crypto import (
     generate_dek,
 )
 from soulservice.core.db import async_session_factory
+from soulservice.models.adaptation import ADAPTATION_CATEGORIES
 
 # ── Helpers ──────────────────────────────────────────────────────
 
@@ -743,6 +744,201 @@ def init(self_core_file: str | None):
             click.echo("Initialization complete.")
 
     _run(_init())
+
+
+# ── Adaptation ────────────────────────────────────────────────
+
+
+@cli.group()
+def adaptation():
+    """Manage soul adaptations (learned dispositions)."""
+
+
+@adaptation.command("add")
+@click.option("--soul", "soul_slug", required=True, help="Soul slug")
+@click.option(
+    "--category",
+    required=True,
+    type=click.Choice(ADAPTATION_CATEGORIES, case_sensitive=False),
+    help="Adaptation category",
+)
+@click.option("--confidence", default=0.5, help="Confidence score 0.0-1.0")
+@click.option("--source", default="manual", help="Source of this adaptation")
+@click.argument("content")
+def adaptation_add(soul_slug: str, category: str, confidence: float, source: str, content: str):
+    """Add a new adaptation for a soul.
+
+    CONTENT is the adaptation text in the soul's voice (first person).
+    """
+
+    async def _add():
+        async with async_session_factory() as session:
+            row = await session.execute(
+                text("SELECT id, tenant_id FROM souls WHERE slug = :slug"),
+                {"slug": soul_slug},
+            )
+            soul_row = row.mappings().first()
+            if not soul_row:
+                click.echo(f"Error: soul '{soul_slug}' not found.", err=True)
+                raise SystemExit(1)
+
+            soul_id = soul_row["id"]
+            tenant_id = soul_row["tenant_id"]
+
+            dek_row = await session.execute(
+                text("SELECT dek_encrypted FROM soul_keys WHERE soul_id = :sid"),
+                {"sid": str(soul_id)},
+            )
+            dek_result = dek_row.mappings().first()
+            if not dek_result:
+                click.echo("Error: no encryption key for this soul.", err=True)
+                raise SystemExit(1)
+
+            dek = decrypt_dek(bytes(dek_result["dek_encrypted"]))
+            ct, nonce = encrypt_content(content, dek)
+
+            result = await session.execute(
+                text(
+                    "INSERT INTO soul_adaptations "
+                    "(tenant_id, soul_id, category, content_encrypted, content_nonce, "
+                    "confidence, source) "
+                    "VALUES (:tid, :sid, :cat, :ct, :nonce, :conf, :src) RETURNING id"
+                ),
+                {
+                    "tid": str(tenant_id),
+                    "sid": str(soul_id),
+                    "cat": category,
+                    "ct": ct,
+                    "nonce": nonce,
+                    "conf": confidence,
+                    "src": source,
+                },
+            )
+            adaptation_id = result.mappings().first()["id"]
+            await session.commit()
+            return adaptation_id
+
+    aid = _run(_add())
+    click.echo(f"Adaptation added: {aid}")
+
+
+@adaptation.command("list")
+@click.option("--soul", "soul_slug", required=True, help="Soul slug")
+@click.option("--status", "filter_status", default="active", help="Filter by status")
+def adaptation_list(soul_slug: str, filter_status: str):
+    """List adaptations for a soul."""
+
+    async def _list():
+        async with async_session_factory() as session:
+            row = await session.execute(
+                text("SELECT id, tenant_id FROM souls WHERE slug = :slug"),
+                {"slug": soul_slug},
+            )
+            soul_row = row.mappings().first()
+            if not soul_row:
+                click.echo(f"Error: soul '{soul_slug}' not found.", err=True)
+                raise SystemExit(1)
+
+            soul_id = soul_row["id"]
+
+            dek_row = await session.execute(
+                text("SELECT dek_encrypted FROM soul_keys WHERE soul_id = :sid"),
+                {"sid": str(soul_id)},
+            )
+            dek_result = dek_row.mappings().first()
+            dek = decrypt_dek(bytes(dek_result["dek_encrypted"]))
+
+            adaptations = await session.execute(
+                text(
+                    "SELECT id, category, content_encrypted, content_nonce, "
+                    "confidence, source, created_at, status "
+                    "FROM soul_adaptations WHERE soul_id = :sid AND status = :st "
+                    "ORDER BY category, created_at"
+                ),
+                {"sid": str(soul_id), "st": filter_status},
+            )
+            results = []
+            for a in adaptations.mappings().all():
+                plaintext = decrypt_content(
+                    bytes(a["content_encrypted"]),
+                    bytes(a["content_nonce"]),
+                    dek,
+                )
+                results.append({**a, "content": plaintext})
+            return results
+
+    for a in _run(_list()):
+        preview = a["content"][:80].replace("\n", " ")
+        if len(a["content"]) > 80:
+            preview += "..."
+        click.echo(
+            f"  {str(a['id'])[:8]}...  {a['category']:25s}  "
+            f"conf={a['confidence']:.1f}  {a['source'] or '-':10s}  {preview}"
+        )
+
+
+@adaptation.command("supersede")
+@click.argument("adaptation_id")
+@click.argument("new_content")
+@click.option("--confidence", default=None, type=float, help="New confidence score")
+def adaptation_supersede(adaptation_id: str, new_content: str, confidence: float | None):
+    """Replace an adaptation with a new version, preserving history."""
+
+    async def _supersede():
+        async with async_session_factory() as session:
+            old = await session.execute(
+                text(
+                    "SELECT soul_id, tenant_id, category, confidence "
+                    "FROM soul_adaptations WHERE id = :aid AND status = 'active'"
+                ),
+                {"aid": adaptation_id},
+            )
+            old_row = old.mappings().first()
+            if not old_row:
+                click.echo("Error: adaptation not found or not active.", err=True)
+                raise SystemExit(1)
+
+            soul_id = old_row["soul_id"]
+            tenant_id = old_row["tenant_id"]
+            conf = confidence if confidence is not None else old_row["confidence"]
+
+            dek_row = await session.execute(
+                text("SELECT dek_encrypted FROM soul_keys WHERE soul_id = :sid"),
+                {"sid": str(soul_id)},
+            )
+            dek = decrypt_dek(bytes(dek_row.mappings().first()["dek_encrypted"]))
+            ct, nonce = encrypt_content(new_content, dek)
+
+            new = await session.execute(
+                text(
+                    "INSERT INTO soul_adaptations "
+                    "(tenant_id, soul_id, category, content_encrypted, content_nonce, "
+                    "confidence, source) "
+                    "VALUES (:tid, :sid, :cat, :ct, :nonce, :conf, 'supersede') RETURNING id"
+                ),
+                {
+                    "tid": str(tenant_id),
+                    "sid": str(soul_id),
+                    "cat": old_row["category"],
+                    "ct": ct,
+                    "nonce": nonce,
+                    "conf": conf,
+                },
+            )
+            new_id = new.mappings().first()["id"]
+
+            await session.execute(
+                text(
+                    "UPDATE soul_adaptations SET status = 'superseded', "
+                    "superseded_by = :new_id WHERE id = :old_id"
+                ),
+                {"new_id": str(new_id), "old_id": adaptation_id},
+            )
+            await session.commit()
+            return new_id
+
+    new_id = _run(_supersede())
+    click.echo(f"Superseded. New adaptation: {new_id}")
 
 
 # ── Health ───────────────────────────────────────────────────────

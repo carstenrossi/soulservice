@@ -2,6 +2,7 @@
 name = "soulservice"
 version = "0.1.0"
 description = "MCP-based platform for AI personalities with memory, identity, and relationships"
+license = "PolyForm-Noncommercial-1.0.0"
 requires-python = ">=3.12"
 dependencies = [
     "mcp>=1.27,<2",

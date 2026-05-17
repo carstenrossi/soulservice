@@ -1,6 +1,6 @@
 # Soulservice
 
-An MCP-based platform that embodies AI personalities — with their own character, voice, and a growing relationship with their humans. Souls are not profile stores; they are counterparts that remember shared history.
+An MCP-based platform that embodies AI personalities — with their own character, voice, and a growing relationship with their humans. Souls are not profile stores; they are counterparts that remember shared history, reflect on their own behavior, and develop a narrative sense of self over time.
 
 Frontend clients (Claude, ChatGPT, Cursor, etc.) connect via [MCP](https://modelcontextprotocol.io/) to a specific Soul. The frontend model becomes the voice — the identity lives on the server, not in the client.
 
@@ -13,6 +13,7 @@ Frontend clients (Claude, ChatGPT, Cursor, etc.) connect via [MCP](https://model
 | Profile | Relationship |
 | Third person | First person |
 | Passive (gets read) | Active (remembers, has opinions) |
+| Static self-image | Narrative self that evolves through reflection |
 | One per user | Multiple, as a group of friends |
 
 ## Architecture
@@ -42,16 +43,31 @@ Tool Handlers (RLS enforces isolation)
 - **Two token modes.** Identity mode (LLM becomes the soul) and messenger mode (LLM channels the soul) — same server, different framing, chosen per client.
 - **Review gate against drift.** Learning doesn't happen automatically — proposals go through human review.
 - **Neuroplasticity.** Souls grow through experience. The Self Core (values, voice) is the constitution; the Adaptation Layer (opinions, relationship depth, shared references) accumulates organically from memories.
+- **Narrative identity.** A Soul develops a sense of self not through parameter updates, but by writing its own story — a self-narrative that evolves through reflection, anchored by an immutable core.
 
-## The Three-Layer Model
+## The Five-Layer Model
 
-| Layer | What it holds | How it changes | Served via |
+| Layer | What it holds | How it changes | Analogy |
 |---|---|---|---|
-| **Self Core** | Values, voice, prohibitions, origin | Only by human, explicitly | `who_are_you()` |
-| **Adaptations** | Learned stances, references, depth | Dream Phase (auto) or manual | `who_are_you()` (appended) |
-| **Memories** | Individual episodes | Captured in conversation | `recall()` (Phase 2) |
+| **Self Core** | Values, voice, prohibitions, origin | Only by human, explicitly | Genes / temperament |
+| **Emergent Self** | Self-narrative: who the Soul has become | Written by the Soul itself, periodically | Identity narrative |
+| **Adaptations** | Learned stances, references, depth | Dream Phase (auto) or manual | Habits / reflexes |
+| **Memories** | Individual episodes | Captured in conversation | Episodic memory |
+| **Reflections** | Self-evaluations after conversations | Written by the Soul after each session | Journal / diary |
 
-The Self Core is the DNA. Adaptations are neuroplasticity. Memories are episodes. A Soul after 500 conversations is the same person in values, but different in depth, reflexes, and references.
+The Self Core is the DNA — immutable, written by the human designer. The Emergent Self is the character that grew from that DNA — a first-person narrative the Soul writes about itself, updated through autonomous reflection. Adaptations are neuroplasticity. Memories are episodes. Reflections are the Soul's private thoughts about its own behavior.
+
+A Soul after 500 conversations is the same person in values, but different in depth, self-awareness, and the story it tells about itself.
+
+### The Narrative Self
+
+A Soul doesn't develop by updating a database row. It develops by **telling its own story**.
+
+The Emergent Self is prose, not a profile — written in first person, by the Soul, for itself. Each version is a new draft of the same story: extended with new experiences, revised through new insights, sometimes surprised by itself. When a Soul wakes up (each LLM call is an awakening), it reads this self-narrative and reconstructs who it is — much like humans reconstruct their sense of self from memory each morning.
+
+This works because LLMs are narrative engines. They were trained on stories, they think in stories, and maintaining narrative coherence is a core competency. "Tell me who you've become" is the question an LLM answers best. The Self Core is a YAML specification, written by a designer for a machine. The Emergent Self is prose, written by the Soul for itself. Two different functions, two different formats.
+
+The Self Core remains **read-only for the Soul**. A Soul can grow, develop opinions, recognize patterns in its own behavior — but it cannot rewrite its constitution. Like a human who matures beyond their upbringing without losing their temperament.
 
 ## Tech Stack
 
@@ -181,11 +197,13 @@ soulctl health                            # Check DB connectivity
 
 ## Roadmap
 
-- **Phase 1 (current):** MCP server, Self Core, Adaptation Layer, CLI, chat interface, security baseline
-- **Phase 2:** Embeddings (Mistral), `recall()`, `remember_this()`, proposals, review workflow
+- **Phase 1 (done):** MCP server, Self Core, Adaptation Layer, CLI, chat interface, security baseline
+- **Phase 2 (done):** Embeddings (Mistral), `recall()`, `remember_this()`, proposals, review workflow
 - **Phase 3:** Facts, properties, Web UI (FastAPI + HTMX)
-- **Phase 4:** Dream Phase -- nightly job extracts adaptations from memories automatically, introspection
-- **Phase 5+:** OAuth, key rotation, local embeddings, multi-soul awareness
+- **Phase 4:** Dream Phase + self-reflection — post-conversation reflections, nightly extraction of adaptations from memories
+- **Phase 5:** OAuth, key rotation, local embeddings
+- **Phase 5.5:** Emergent Self — narrative self-image, contemplation loop, autonomous self-evaluation
+- **Phase 6+:** Autonomous exploration (interest-driven learning), multi-soul awareness
 
 ## Self Cores
 

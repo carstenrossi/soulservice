@@ -143,6 +143,8 @@ CREATE TABLE facts (
   value_nonce BYTEA NOT NULL,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   confidence FLOAT NOT NULL DEFAULT 1.0,
+  status TEXT NOT NULL DEFAULT 'active'
+    CHECK (status IN ('active', 'deleted')),
   UNIQUE (tenant_id, soul_id, category, key)
 );
 

@@ -5,6 +5,8 @@ from uuid import UUID, uuid4
 
 from sqlmodel import Field, SQLModel
 
+FACT_STATUSES = ("active", "deleted")
+
 
 class Fact(SQLModel, table=True):
     __tablename__ = "facts"
@@ -18,3 +20,4 @@ class Fact(SQLModel, table=True):
     value_nonce: bytes
     updated_at: datetime = Field(default_factory=datetime.utcnow)
     confidence: float = 1.0
+    status: str = "active"

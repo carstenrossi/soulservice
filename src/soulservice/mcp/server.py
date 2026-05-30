@@ -269,6 +269,95 @@ async def decide(proposal_id: str, action: str, note: str | None = None) -> str:
 
 
 @mcp.tool()
+async def learn_fact(category: str, key: str, value: str, confidence: float = 1.0) -> str:
+    """Store or update a structured fact (e.g. user preferences, known context)."""
+    try:
+        identity = _require_identity()
+    except ValueError as e:
+        return f"Error: {e}"
+
+    async with get_scoped_session(identity.tenant_id, identity.soul_id) as session:
+        result = await facts_learn(
+            session,
+            identity.tenant_id,
+            identity.soul_id,
+            category,
+            key,
+            value,
+            confidence=confidence,
+        )
+
+        await log_tool_call(
+            session,
+            tenant_id=identity.tenant_id,
+            user_id=identity.user_id,
+            soul_id=identity.soul_id,
+            token_id=identity.token_id,
+            tool_name="learn_fact",
+            result_size=len(result),
+        )
+
+    return result
+
+
+@mcp.tool()
+async def get_facts(category: str | None = None) -> str:
+    """Retrieve stored facts, optionally filtered by category."""
+    try:
+        identity = _require_identity()
+    except ValueError as e:
+        return f"Error: {e}"
+
+    async with get_scoped_session(identity.tenant_id, identity.soul_id) as session:
+        result = await facts_get(
+            session,
+            identity.soul_id,
+            category=category,
+        )
+
+        await log_tool_call(
+            session,
+            tenant_id=identity.tenant_id,
+            user_id=identity.user_id,
+            soul_id=identity.soul_id,
+            token_id=identity.token_id,
+            tool_name="get_facts",
+            result_size=len(result),
+        )
+
+    return result
+
+
+@mcp.tool()
+async def forget_fact(category: str, key: str) -> str:
+    """Remove a stored fact that is no longer accurate."""
+    try:
+        identity = _require_identity()
+    except ValueError as e:
+        return f"Error: {e}"
+
+    async with get_scoped_session(identity.tenant_id, identity.soul_id) as session:
+        result = await facts_forget(
+            session,
+            identity.soul_id,
+            category,
+            key,
+        )
+
+        await log_tool_call(
+            session,
+            tenant_id=identity.tenant_id,
+            user_id=identity.user_id,
+            soul_id=identity.soul_id,
+            token_id=identity.token_id,
+            tool_name="forget_fact",
+            result_size=len(result),
+        )
+
+    return result
+
+
+@mcp.tool()
 async def whoami() -> dict:
     """Which Soul, which Tenant, which User am I connected to?"""
     identity = current_identity.get()

@@ -1,4 +1,4 @@
-"""Auth middleware: resolve Bearer token → TokenIdentity, set RLS context."""
+"""Auth middleware: resolve a Bearer token into a TokenIdentity."""
 
 from __future__ import annotations
 
@@ -6,10 +6,9 @@ from datetime import datetime, timezone
 from uuid import UUID
 
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from soulservice.core.auth import TokenIdentity, verify_token
-from soulservice.core.db import async_session_factory
+from soulservice.core.db import app_session_factory
 
 
 async def resolve_bearer_token(authorization: str | None) -> TokenIdentity | None:
@@ -21,7 +20,7 @@ async def resolve_bearer_token(authorization: str | None) -> TokenIdentity | Non
     if not token.startswith("sol_"):
         return None
 
-    async with async_session_factory() as session:
+    async with app_session_factory() as session:
         rows = await session.execute(
             text("""
                 SELECT id, tenant_id, user_id, soul_id, token_hash, scopes,
@@ -43,7 +42,7 @@ async def resolve_bearer_token(authorization: str | None) -> TokenIdentity | Non
             continue
 
         # Valid token – update last_used_at
-        async with async_session_factory() as session:
+        async with app_session_factory() as session:
             await session.execute(
                 text("UPDATE api_tokens SET last_used_at = NOW() WHERE id = :tid"),
                 {"tid": str(row["id"])},
@@ -60,17 +59,3 @@ async def resolve_bearer_token(authorization: str | None) -> TokenIdentity | Non
         )
 
     return None
-
-
-async def set_rls_context(
-    session: AsyncSession, tenant_id: UUID, soul_id: UUID
-) -> None:
-    """Set RLS variables for the current transaction."""
-    await session.execute(
-        text("SET LOCAL app.current_tenant = :tid"),
-        {"tid": str(tenant_id)},
-    )
-    await session.execute(
-        text("SET LOCAL app.current_soul = :sid"),
-        {"sid": str(soul_id)},
-    )

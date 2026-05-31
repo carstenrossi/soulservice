@@ -11,7 +11,7 @@ import uvicorn
 from mcp.server.fastmcp import FastMCP
 
 from soulservice.core.config import settings
-from soulservice.core.db import async_session_factory, get_scoped_session
+from soulservice.core.db import app_session_factory, get_scoped_session
 from soulservice.core.audit import log_tool_call
 from soulservice.core.auth import TokenIdentity
 from soulservice.core.ratelimit import rate_limiter
@@ -460,7 +460,7 @@ async def whoami() -> dict:
     if identity is None:
         return {"error": "not authenticated"}
 
-    async with async_session_factory() as session:
+    async with app_session_factory() as session:
         row = await session.execute(
             text("""
                 SELECT t.name as tenant_name, u.display_name as user_name,

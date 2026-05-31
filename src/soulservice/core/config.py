@@ -1,6 +1,11 @@
 from __future__ import annotations
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_DEFAULT_APP_DATABASE_URL = (
+    "postgresql+asyncpg://soulservice_app:soulservice_app_pw@localhost:6000/soulservice"
+)
 
 
 class Settings(BaseSettings):
@@ -11,7 +16,17 @@ class Settings(BaseSettings):
     database_url: str = (
         "postgresql+asyncpg://soulservice:changeme@localhost:6000/soulservice"
     )
+    # Restricted runtime connection (non-owner role, subject to RLS).
+    # Used by the MCP runtime path; admin/migrations use database_url.
+    app_database_url: str = _DEFAULT_APP_DATABASE_URL
     soulservice_master_key: str = ""
+
+    @field_validator("app_database_url")
+    @classmethod
+    def _fallback_app_database_url(cls, value: str) -> str:
+        # An empty value (e.g. the .env.example placeholder) falls back to the
+        # local dev role bootstrapped by infra/init.sql.
+        return value or _DEFAULT_APP_DATABASE_URL
 
     soulservice_host: str = "0.0.0.0"
     soulservice_port: int = 8000

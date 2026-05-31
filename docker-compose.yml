@@ -23,7 +23,10 @@ services:
     ports:
       - "6001:8000"
     environment:
+      # Owner connection: migrations + admin only
       DATABASE_URL: postgresql+asyncpg://soulservice:${POSTGRES_PASSWORD}@postgres:5432/soulservice
+      # Restricted runtime connection (RLS-enforced)
+      APP_DATABASE_URL: postgresql+asyncpg://soulservice_app:soulservice_app_pw@postgres:5432/soulservice
       SOULSERVICE_MASTER_KEY: ${SOULSERVICE_MASTER_KEY}
       MISTRAL_API_KEY: ${MISTRAL_API_KEY:-}
       SOULSERVICE_HOST: "0.0.0.0"

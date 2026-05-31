@@ -157,14 +157,22 @@ Each API token has a **mode** that controls how the server frames tool responses
 
 **Note:** Claude Desktop only adopts a Soul's voice when triggered per session. Persistent instructions (Custom Instructions / Project Instructions) that tell Claude to become someone else are rejected by its safety layer. The per-session trigger works because Claude treats it as a situational task, not an identity change.
 
-## MCP Tools (Phase 1)
+## MCP Tools
 
-| Tool | Description |
-|---|---|
-| `who_are_you()` | Load the Soul's identity (Self Core + Adaptations). Call first. |
-| `whats_our_history()` | Relationship overview and current topics. |
-| `whoami()` | Which Soul, Tenant, User is this token bound to? |
-| `health()` | Server health check. |
+| Tool | Phase | Description |
+|---|---|---|
+| `who_are_you()` | 1 | Load the Soul's identity (Self Core + Adaptations). Call first. |
+| `whats_our_history()` | 1 | Relationship overview and current topics. |
+| `whoami()` | 1 | Which Soul, Tenant, User is this token bound to? |
+| `health()` | 1 | Server health check. |
+| `remember_this(content, tags?, salience?)` | 2 | Note something from conversation (pending review). |
+| `recall(query, k?)` | 2 | Semantic search through confirmed memories. |
+| `recall_recent(days?)` | 2 | Get recent memories (chronological). |
+| `list_proposals(status?)` | 2 | List conversation notes pending human review. |
+| `decide(proposal_id, action, note?)` | 2 | Approve or reject a conversation note. |
+| `learn_fact(category, key, value, confidence?)` | 3 | Store or update a structured fact. |
+| `get_facts(category?)` | 3 | Retrieve stored facts, optionally by category. |
+| `forget_fact(category, key)` | 3 | Soft-delete a fact that is no longer accurate. |
 
 ## CLI (`soulctl`)
 
@@ -183,6 +191,12 @@ soulctl adaptation add --soul mysoul --category topic_stance "Simple beats cleve
 soulctl adaptation add --soul mysoul --category shared_reference "The night we built the memory pipeline."
 soulctl adaptation list --soul mysoul
 soulctl adaptation supersede <id> "Updated stance text"
+soulctl fact set --soul mysoul --category user_profile --key employer "Acme Corp"
+soulctl fact set --soul mysoul --category preferences --key language "Python"
+soulctl fact list --soul mysoul
+soulctl fact list --soul mysoul --category user_profile
+soulctl fact get --soul mysoul --category user_profile --key employer
+soulctl fact remove --soul mysoul --category user_profile --key employer
 soulctl health                            # Check DB connectivity
 ```
 
@@ -199,7 +213,7 @@ soulctl health                            # Check DB connectivity
 
 - **Phase 1 (done):** MCP server, Self Core, Adaptation Layer, CLI, chat interface, security baseline
 - **Phase 2 (done):** Embeddings (Mistral), `recall()`, `remember_this()`, proposals, review workflow
-- **Phase 3:** Facts, properties, Web UI (FastAPI + HTMX)
+- **Phase 3 (in progress):** Facts (**done**), properties, Web UI (FastAPI + HTMX)
 - **Phase 4:** Dream Phase + self-reflection — post-conversation reflections, nightly extraction of adaptations from memories
 - **Phase 5:** OAuth, key rotation, local embeddings
 - **Phase 5.5:** Emergent Self — narrative self-image, contemplation loop, autonomous self-evaluation

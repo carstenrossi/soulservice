@@ -3,6 +3,8 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID, uuid4
 
+from sqlalchemy import Column, Text, text
+from sqlalchemy.dialects.postgresql import ARRAY
 from sqlmodel import Field, SQLModel
 
 
@@ -21,5 +23,11 @@ class Memory(SQLModel, table=True):
     source_client: str | None = None
     salience: float = 0.5
     status: str = "pending"
-    tags: list[str] = Field(default_factory=list)
-    injection_flags: list[str] = Field(default_factory=list)
+    tags: list[str] = Field(
+        default_factory=list,
+        sa_column=Column(ARRAY(Text), nullable=False, server_default=text("'{}'")),
+    )
+    injection_flags: list[str] = Field(
+        default_factory=list,
+        sa_column=Column(ARRAY(Text), nullable=False, server_default=text("'{}'")),
+    )

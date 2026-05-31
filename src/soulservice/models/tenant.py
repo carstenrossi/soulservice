@@ -3,6 +3,8 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID, uuid4
 
+from sqlalchemy import Column, text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlmodel import Field, SQLModel
 
 
@@ -13,7 +15,10 @@ class Tenant(SQLModel, table=True):
     name: str
     created_at: datetime = Field(default_factory=datetime.utcnow)
     plan: str = "personal"
-    settings: dict = Field(default_factory=dict, sa_type_kwargs={"astext_type": None})
+    settings: dict = Field(
+        default_factory=dict,
+        sa_column=Column(JSONB, nullable=False, server_default=text("'{}'::jsonb")),
+    )
 
 
 class User(SQLModel, table=True):

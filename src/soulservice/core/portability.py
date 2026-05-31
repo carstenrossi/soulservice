@@ -419,23 +419,33 @@ async def import_soul(
         uid = resolved_owner_user_id
 
         if existing_row is None:
+            history_entries = self_core_data.get("history") or []
+            src_version = self_core_data.get("current_version") or 1
+            max_hist_version = max(
+                (h["version"] for h in history_entries), default=0
+            )
+            # Keep the current version strictly above any archived version so a
+            # later merge (which archives the live version) cannot collide on the
+            # (soul_id, version) unique constraint.
+            current_version = max(src_version, max_hist_version + 1, 1)
             await session.execute(
                 text(
                     "INSERT INTO soul_self_cores "
                     "(soul_id, tenant_id, content_encrypted, content_nonce, "
                     "current_version, updated_by) "
-                    "VALUES (:sid, :tid, :ct, :nonce, 1, :uid)"
+                    "VALUES (:sid, :tid, :ct, :nonce, :ver, :uid)"
                 ),
                 {
                     "sid": str(new_soul_id),
                     "tid": str(tenant_id),
                     "ct": ct,
                     "nonce": nonce,
+                    "ver": current_version,
                     "uid": uid,
                 },
             )
             stats["self_core"] = 1
-            for hist in self_core_data.get("history") or []:
+            for hist in history_entries:
                 hct, hnonce = encrypt_content(
                     hist["content"], dek, build_aad(new_soul_id, "self_core")
                 )

@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Login – Soulservice Admin</title>
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body class="login-page">
+  <main class="login-box">
+    <h1>Soulservice Admin</h1>
+    {% if sent %}
+    <p class="notice">If your email is authorized, a login link has been sent. Check Mailpit at <a href="http://localhost:6004" target="_blank">localhost:6004</a>.</p>
+    {% else %}
+    <form method="post" action="/login">
+      <label for="email">Email</label>
+      <input type="email" id="email" name="email" required autofocus>
+      <button type="submit">Send magic link</button>
+    </form>
+    {% endif %}
+  </main>
+</body>
+</html>

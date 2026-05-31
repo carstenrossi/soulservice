@@ -161,7 +161,6 @@ async def test_other_tenant_context_sees_only_its_own(seeded):
 
 async def test_no_context_is_fail_closed(seeded):
     """Without an RLS context, the app role must not read foreign rows."""
-    app_factory = seeded["app_factory"]
     # Use a dedicated engine so the custom GUC was never set on this connection.
     engine = create_async_engine(_APP_URL)
     factory = async_sessionmaker(engine, expire_on_commit=False)

@@ -28,7 +28,8 @@ class Settings(BaseSettings):
         # local dev role bootstrapped by infra/init.sql.
         return value or _DEFAULT_APP_DATABASE_URL
 
-    soulservice_host: str = "0.0.0.0"
+    # Binds the MCP server to all interfaces for container/LAN deployment.
+    soulservice_host: str = "0.0.0.0"  # noqa: S104
     soulservice_port: int = 8000
     soulservice_log_level: str = "info"
 
@@ -45,6 +46,46 @@ class Settings(BaseSettings):
 
     # Token defaults
     token_max_age_days: int = 90
+
+    # Web UI (Phase 3, admin, localhost-only)
+    web_host: str = "127.0.0.1"
+    web_port: int = 8000
+    web_base_url: str = "http://localhost:6002"
+    web_session_secret: str = ""
+    # Comma-separated allowlist. Each entry is "email" (role defaults to "admin"
+    # for backwards compatibility) or "email:role" with role in viewer/editor/admin.
+    web_admin_emails: str = ""
+    web_magic_link_ttl_minutes: int = 10
+    # Send session cookies only over HTTPS. Keep False for localhost/http; set
+    # True behind TLS in production.
+    web_secure_cookies: bool = False
+    # Magic-link requests allowed per (client IP + email) per hour.
+    web_login_rate_per_hour: int = 10
+    smtp_host: str = "localhost"
+    smtp_port: int = 1025
+    web_from_email: str = "soulservice@localhost"
+
+    @property
+    def web_admin_roles(self) -> dict[str, str]:
+        """Map allowlisted email -> role (viewer < editor < admin)."""
+        known = {"viewer", "editor", "admin"}
+        roles: dict[str, str] = {}
+        for entry in self.web_admin_emails.split(","):
+            entry = entry.strip()
+            if not entry:
+                continue
+            email, _, role = entry.partition(":")
+            email = email.strip().lower()
+            if not email:
+                continue
+            role = role.strip().lower() or "admin"
+            # Unknown role falls back to least privilege.
+            roles[email] = role if role in known else "viewer"
+        return roles
+
+    @property
+    def web_admin_email_set(self) -> set[str]:
+        return set(self.web_admin_roles.keys())
 
     @property
     def master_key_bytes(self) -> bytes:

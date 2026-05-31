@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Tokens – {{ soul.display_name }}{% endblock %}
+{% block content %}
+<h1>Tokens – {{ soul.display_name }}</h1>
+{% if new_token %}
+<div class="notice token-reveal">
+  <strong>New token (shown once — copy now):</strong>
+  <code>{{ new_token }}</code>
+</div>
+{% endif %}
+{% if can_admin %}
+<form class="inline-form" method="post" action="/souls/{{ soul.slug }}/tokens">
+  <input name="name" placeholder="Token name" required>
+  <select name="mode">
+    {% for m in modes %}<option value="{{ m }}">{{ m }}</option>{% endfor %}
+  </select>
+  <label><input type="checkbox" name="read_only" value="true"> Read-only</label>
+  <button type="submit">Create token</button>
+</form>
+{% else %}
+<p class="notice">Token management requires the admin role.</p>
+{% endif %}
+<table>
+  <thead><tr><th>Prefix</th><th>Name</th><th>Mode</th><th>Scopes</th><th>Status</th><th>Last used</th><th></th></tr></thead>
+  <tbody>
+  {% for t in items %}
+  <tr>
+    <td>{{ t.token_prefix }}…</td>
+    <td>{{ t.name }}</td>
+    <td>{{ t.mode }}</td>
+    <td>{{ t.scopes|join(", ") }}</td>
+    <td>{% if t.revoked %}revoked{% else %}active{% endif %}</td>
+    <td>{{ t.last_used_at.strftime("%Y-%m-%d") if t.last_used_at else "never" }}</td>
+    <td>
+      {% if can_admin and not t.revoked %}
+      <form method="post" action="/souls/{{ soul.slug }}/tokens/{{ t.id }}/revoke" style="display:inline">
+        <button type="submit" class="danger small">Revoke</button>
+      </form>
+      {% endif %}
+    </td>
+  </tr>
+  {% else %}
+  <tr><td colspan="7">No tokens yet.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

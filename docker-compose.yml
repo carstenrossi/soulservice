@@ -46,11 +46,18 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://soulservice:${POSTGRES_PASSWORD}@postgres:5432/soulservice
       SOULSERVICE_MASTER_KEY: ${SOULSERVICE_MASTER_KEY}
+      WEB_HOST: "0.0.0.0"
+      WEB_BASE_URL: http://localhost:6002
+      WEB_SESSION_SECRET: ${WEB_SESSION_SECRET:-}
+      WEB_ADMIN_EMAILS: ${WEB_ADMIN_EMAILS:-}
+      WEB_FROM_EMAIL: ${WEB_FROM_EMAIL:-soulservice@localhost}
       SMTP_HOST: mailpit
       SMTP_PORT: "1025"
     depends_on:
       postgres:
         condition: service_healthy
+      mailpit:
+        condition: service_started
     profiles:
       - web  # Phase 3: docker compose --profile web up
 

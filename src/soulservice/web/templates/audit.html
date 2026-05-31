@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Audit – {{ soul.display_name }}{% endblock %}
+{% block content %}
+<h1>Audit log – {{ soul.display_name }}</h1>
+<form class="inline-form" method="get" action="/souls/{{ soul.slug }}/audit">
+  <input name="tool" value="{{ filter_tool }}" placeholder="Filter by tool name">
+  <input name="days" type="number" min="1" max="90" value="{{ filter_days }}" style="width:4rem">
+  <button type="submit">Filter</button>
+</form>
+<table>
+  <thead><tr><th>Time</th><th>Tool</th><th>Status</th><th>Client</th><th>Result size</th></tr></thead>
+  <tbody>
+  {% for row in items %}
+  <tr>
+    <td>{{ row.occurred_at.strftime("%Y-%m-%d %H:%M:%S") }}</td>
+    <td>{{ row.tool_name }}</td>
+    <td>{{ row.status }}</td>
+    <td>{{ row.source_client or "—" }}</td>
+    <td>{{ row.result_size or "—" }}</td>
+  </tr>
+  {% else %}
+  <tr><td colspan="5">No audit entries in this period.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+<nav class="pagination">
+  {% if page > 1 %}<a href="/souls/{{ soul.slug }}/audit?page={{ page - 1 }}&tool={{ filter_tool }}&days={{ filter_days }}">← Prev</a>{% endif %}
+  <span>Page {{ page }}</span>
+  {% if has_next %}<a href="/souls/{{ soul.slug }}/audit?page={{ page + 1 }}&tool={{ filter_tool }}&days={{ filter_days }}">Next →</a>{% endif %}
+</nav>
+{% endblock %}

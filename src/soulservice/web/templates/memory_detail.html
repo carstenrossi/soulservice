@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Memory – {{ soul.display_name }}{% endblock %}
+{% block content %}
+<h1>Memory detail</h1>
+<div class="card">
+  <div class="card-meta">{{ memory.created_at.strftime("%Y-%m-%d %H:%M") }} · status={{ memory.status }} · salience={{ "%.1f"|format(memory.salience) }}</div>
+  {% if memory.decryption_failed %}<span class="flag">decryption failed</span>{% endif %}
+  <pre class="memory-content">{{ memory.content }}</pre>
+  {% if can_edit and memory.status in ("confirmed", "pending") %}
+  <form method="post" action="/souls/{{ soul.slug }}/memories/{{ memory.id }}/forget" onsubmit="return confirm('Mark this memory as forgotten?');">
+    <button type="submit" class="danger">Forget</button>
+  </form>
+  {% endif %}
+</div>
+<p><a href="/souls/{{ soul.slug }}/memories">← Back to memories</a></p>
+{% endblock %}

@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Soulservice Admin{% endblock %}</title>
+  <link rel="stylesheet" href="/static/app.css">
+  <script src="https://unpkg.com/htmx.org@2.0.9"></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-row">
+      <strong><a href="/">Soulservice Admin</a></strong>
+      {% if souls is defined and souls %}
+      <form class="soul-selector" method="get" action="/">
+        <label for="soul-select">Soul:</label>
+        <select id="soul-select" name="soul" onchange="this.form.submit()">
+          {% for s in souls %}
+          <option value="{{ s.slug }}" {% if soul is defined and soul.slug == s.slug %}selected{% endif %}>
+            {{ s.display_name }}
+          </option>
+          {% endfor %}
+        </select>
+      </form>
+      {% endif %}
+      <span class="role-badge">{{ role }}</span>
+      <form method="post" action="/logout" class="logout-form">
+        <button type="submit">Logout</button>
+      </form>
+    </div>
+    {% if soul is defined %}
+    <nav class="main-nav">
+      <a href="/?soul={{ soul.slug }}">Dashboard</a>
+      <a href="/souls/{{ soul.slug }}/proposals">Proposals</a>
+      <a href="/souls/{{ soul.slug }}/memories">Memories</a>
+      <a href="/souls/{{ soul.slug }}/facts">Facts</a>
+      <a href="/souls/{{ soul.slug }}/properties">Properties</a>
+      <a href="/souls/{{ soul.slug }}/self-core">Self Core</a>
+      <a href="/souls/{{ soul.slug }}/tokens">Tokens</a>
+      <a href="/souls/{{ soul.slug }}/audit">Audit</a>
+    </nav>
+    {% endif %}
+  </header>
+  <main class="content">{% block content %}{% endblock %}</main>
+</body>
+</html>

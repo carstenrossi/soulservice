@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Memories – {{ soul.display_name }}{% endblock %}
+{% block content %}
+<h1>Memories – {{ soul.display_name }}</h1>
+<form class="search-form" method="get" action="/souls/{{ soul.slug }}/memories">
+  <input type="search" name="q" value="{{ query }}" placeholder="Semantic search…">
+  <button type="submit">Search</button>
+  {% if query %}<a href="/souls/{{ soul.slug }}/memories">Clear</a>{% endif %}
+</form>
+{% for item in items %}
+<div class="card">
+  <div class="card-meta">
+    <a href="/souls/{{ soul.slug }}/memories/{{ item.id }}">{{ item.id[:8] }}…</a>
+    · {{ item.created_at.strftime("%Y-%m-%d %H:%M") }}
+    · salience={{ "%.1f"|format(item.salience) }}
+    {% if item.distance is defined %} · dist={{ "%.3f"|format(item.distance) }}{% endif %}
+  </div>
+  {% if item.decryption_failed %}<span class="flag">decryption failed</span>{% endif %}
+  <p class="card-body preview">{{ item.content[:300] }}{% if item.content|length > 300 %}…{% endif %}</p>
+</div>
+{% else %}
+<p>No memories found.</p>
+{% endfor %}
+{% if not query %}
+<nav class="pagination">
+  {% if page > 1 %}<a href="/souls/{{ soul.slug }}/memories?page={{ page - 1 }}">← Prev</a>{% endif %}
+  <span>Page {{ page }}</span>
+  {% if has_next %}<a href="/souls/{{ soul.slug }}/memories?page={{ page + 1 }}">Next →</a>{% endif %}
+</nav>
+{% endif %}
+{% endblock %}

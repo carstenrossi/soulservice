@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Dashboard – Soulservice Admin{% endblock %}
+{% block content %}
+<h1>Dashboard{% if soul %} – {{ soul.display_name }}{% endif %}</h1>
+{% if not soul %}
+<p>No souls configured yet. Run <code>soulctl init</code> first.</p>
+{% else %}
+<div class="stats-grid">
+  <div class="stat"><span class="stat-value">{{ data.counts.memories_confirmed }}</span><span class="stat-label">Confirmed memories</span></div>
+  <div class="stat"><span class="stat-value">{{ data.counts.memories_pending }}</span><span class="stat-label">Pending proposals</span></div>
+  <div class="stat"><span class="stat-value">{{ data.counts.facts }}</span><span class="stat-label">Facts</span></div>
+  <div class="stat"><span class="stat-value">{{ data.counts.properties }}</span><span class="stat-label">Properties</span></div>
+  <div class="stat"><span class="stat-value">{{ data.counts.tokens_active }}</span><span class="stat-label">Active tokens</span></div>
+  <div class="stat"><span class="stat-value">v{{ data.counts.self_core_version }}</span><span class="stat-label">Self Core version</span></div>
+</div>
+<h2>Recent audit</h2>
+{% if data.recent_audit %}
+<table>
+  <thead><tr><th>Time</th><th>Tool</th><th>Status</th><th>Client</th></tr></thead>
+  <tbody>
+  {% for row in data.recent_audit %}
+  <tr>
+    <td>{{ row.occurred_at.strftime("%Y-%m-%d %H:%M") }}</td>
+    <td>{{ row.tool_name }}</td>
+    <td>{{ row.status }}</td>
+    <td>{{ row.source_client or "—" }}</td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p>No audit entries yet.</p>
+{% endif %}
+{% endif %}
+{% endblock %}

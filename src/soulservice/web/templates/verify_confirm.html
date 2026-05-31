@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Confirm login – Soulservice Admin</title>
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body class="login-page">
+  <main class="login-box">
+    <h1>Confirm login</h1>
+    <p class="notice">Click the button to complete your sign-in. This link can only be used once.</p>
+    <form method="post" action="/auth/verify">
+      <input type="hidden" name="token" value="{{ token }}">
+      <button type="submit">Confirm login</button>
+    </form>
+  </main>
+</body>
+</html>

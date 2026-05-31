@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Properties – {{ soul.display_name }}{% endblock %}
+{% block content %}
+<h1>Properties – {{ soul.display_name }}</h1>
+{% for ptype, schema in schemas.items() %}
+<div class="card">
+  <h2>{{ ptype }}{% if schema.sensitive %} <span class="flag">encrypted</span>{% endif %}</h2>
+  {% set current = existing.get(ptype) %}
+  {% if current %}
+  {% if current.decryption_failed %}<span class="flag">decryption failed</span>{% endif %}
+  <pre>{{ current.value | tojson(indent=2) }}</pre>
+  {% if can_edit %}
+  <form method="post" action="/souls/{{ soul.slug }}/properties/{{ ptype }}/delete" onsubmit="return confirm('Delete this property?');">
+    <button type="submit" class="danger small">Delete</button>
+  </form>
+  {% endif %}
+  {% endif %}
+  {% if can_edit %}
+  <form method="post" action="/souls/{{ soul.slug }}/properties/{{ ptype }}">
+    {% for key in schema.allowed_keys %}
+    <label>{{ key }}
+      <input name="{{ key }}" value="{{ current.value[key] if current and key in current.value else '' }}">
+    </label>
+    {% endfor %}
+    <button type="submit">Save</button>
+  </form>
+  {% endif %}
+</div>
+{% endfor %}
+{% endblock %}

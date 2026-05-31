@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Proposals – {{ soul.display_name }}{% endblock %}
+{% block content %}
+<h1>Proposals – {{ soul.display_name }}</h1>
+{% for item in items %}
+<div id="proposal-{{ item.id }}" class="card">
+  <div class="card-meta">{{ item.created_at.strftime("%Y-%m-%d %H:%M") }} · salience={{ "%.1f"|format(item.salience) }}{% if item.tags %} · tags={{ item.tags|join(", ") }}{% endif %}</div>
+  {% if item.injection_flags %}<span class="flag">FLAGGED: {{ item.injection_flags|join(", ") }}</span>{% endif %}
+  {% if item.decryption_failed %}<span class="flag">decryption failed</span>{% endif %}
+  <p class="card-body">{{ item.content }}</p>
+  {% if can_edit %}
+  <div class="card-actions">
+    <button hx-post="/souls/{{ soul.slug }}/proposals/{{ item.id }}/decide"
+            hx-vals='{"action": "confirm"}'
+            hx-target="#proposal-{{ item.id }}" hx-swap="outerHTML">Confirm</button>
+    <button class="danger" hx-post="/souls/{{ soul.slug }}/proposals/{{ item.id }}/decide"
+            hx-vals='{"action": "reject"}'
+            hx-target="#proposal-{{ item.id }}" hx-swap="outerHTML">Reject</button>
+  </div>
+  {% endif %}
+</div>
+{% else %}
+<p>No pending proposals.</p>
+{% endfor %}
+{% endblock %}

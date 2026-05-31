@@ -9,10 +9,8 @@ import asyncio
 import json
 import os
 import subprocess
-import sys
 import tempfile
-from datetime import datetime, timedelta, timezone
-from uuid import UUID
+from datetime import UTC, datetime, timedelta
 
 import click
 import yaml
@@ -30,12 +28,16 @@ from soulservice.core.crypto import (
 )
 from soulservice.core.db import async_session_factory
 from soulservice.core.embeddings import embed_text
-from soulservice.models.adaptation import ADAPTATION_CATEGORIES
 from soulservice.mcp.tools.properties import (
     delete_property as properties_delete,
+)
+from soulservice.mcp.tools.properties import (
     deserialize_value,
+)
+from soulservice.mcp.tools.properties import (
     set_property as properties_set,
 )
+from soulservice.models.adaptation import ADAPTATION_CATEGORIES
 
 # ── Helpers ──────────────────────────────────────────────────────
 
@@ -247,9 +249,7 @@ def self_core_edit(soul_slug: str):
                 )
                 current_version = sc_result["current_version"]
             else:
-                current_yaml = "# Self Core for {}\n# Edit and save to initialize.\n".format(
-                    soul_slug
-                )
+                current_yaml = f"# Self Core for {soul_slug}\n# Edit and save to initialize.\n"
                 current_version = 0
 
             # Write to temp file and open editor
@@ -261,7 +261,8 @@ def self_core_edit(soul_slug: str):
                 tmppath = f.name
 
             try:
-                subprocess.run([editor, tmppath], check=True)
+                # Local CLI editor launch with trusted, operator-supplied input.
+                subprocess.run([editor, tmppath], check=True)  # noqa: S603
                 with open(tmppath) as f:
                     new_yaml = f.read()
             finally:
@@ -589,7 +590,7 @@ def token_create(
                 raise SystemExit(1)
 
             full_token, prefix, token_hash = generate_token(env_name)
-            expires_at = datetime.now(timezone.utc) + timedelta(days=days)
+            expires_at = datetime.now(UTC) + timedelta(days=days)
 
             await session.execute(
                 text(
@@ -938,7 +939,10 @@ def adaptation_supersede(adaptation_id: str, new_content: str, confidence: float
                 text("SELECT dek_encrypted FROM soul_keys WHERE soul_id = :sid"),
                 {"sid": str(soul_id)},
             )
-            dek = decrypt_dek(bytes(dek_row.mappings().first()["dek_encrypted"]), build_aad(soul_id, "dek"))
+            dek = decrypt_dek(
+                bytes(dek_row.mappings().first()["dek_encrypted"]),
+                build_aad(soul_id, "dek"),
+            )
             ct, nonce = encrypt_content(new_content, dek, build_aad(soul_id, "adaptation"))
 
             new = await session.execute(
@@ -1118,7 +1122,10 @@ def memory_search(soul_slug: str, k: int, query: str):
                 text("SELECT dek_encrypted FROM soul_keys WHERE soul_id = :sid"),
                 {"sid": str(soul_id)},
             )
-            dek = decrypt_dek(bytes(dek_row.mappings().first()["dek_encrypted"]), build_aad(soul_id, "dek"))
+            dek = decrypt_dek(
+                bytes(dek_row.mappings().first()["dek_encrypted"]),
+                build_aad(soul_id, "dek"),
+            )
 
             query_embedding = await embed_text(query)
             embedding_str = "[" + ",".join(str(v) for v in query_embedding) + "]"
@@ -1186,9 +1193,12 @@ def memory_list_cmd(soul_slug: str, days: int, filter_status: str):
                 text("SELECT dek_encrypted FROM soul_keys WHERE soul_id = :sid"),
                 {"sid": str(soul_id)},
             )
-            dek = decrypt_dek(bytes(dek_row.mappings().first()["dek_encrypted"]), build_aad(soul_id, "dek"))
+            dek = decrypt_dek(
+                bytes(dek_row.mappings().first()["dek_encrypted"]),
+                build_aad(soul_id, "dek"),
+            )
 
-            cutoff = datetime.now(timezone.utc) - td(days=days)
+            cutoff = datetime.now(UTC) - td(days=days)
             rows = await session.execute(
                 text(
                     "SELECT id, content_encrypted, content_nonce, created_at, "
@@ -1539,7 +1549,7 @@ def property_set(soul_slug: str, property_type: str, json_value: str):
         value = json.loads(json_value)
     except json.JSONDecodeError as e:
         click.echo(f"Error: invalid JSON: {e}", err=True)
-        raise SystemExit(1)
+        raise SystemExit(1) from e
 
     async def _set():
         async with async_session_factory() as session:

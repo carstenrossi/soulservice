@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Facts – {{ soul.display_name }}{% endblock %}
+{% block content %}
+<h1>Facts – {{ soul.display_name }}</h1>
+{% if can_edit %}
+<form class="inline-form" method="post" action="/souls/{{ soul.slug }}/facts">
+  <input name="category" placeholder="category" required pattern="[a-z][a-z0-9_-]{0,49}">
+  <input name="key" placeholder="key" required pattern="[a-z][a-z0-9_-]{0,49}">
+  <input name="value" placeholder="value" required>
+  <input name="confidence" type="number" step="0.1" min="0" max="1" value="1.0" style="width:4rem">
+  <button type="submit">Set fact</button>
+</form>
+{% endif %}
+<table>
+  <thead><tr><th>Category</th><th>Key</th><th>Value</th><th>Conf</th><th></th></tr></thead>
+  <tbody>
+  {% for item in items %}
+  <tr>
+    <td>{{ item.category }}</td>
+    <td>{{ item.key }}</td>
+    <td class="preview">{{ item.value[:80] }}{% if item.value|length > 80 %}…{% endif %}{% if item.decryption_failed %} <span class="flag">decryption failed</span>{% endif %}</td>
+    <td>{{ "%.1f"|format(item.confidence) }}</td>
+    <td>
+      {% if can_edit %}
+      <form method="post" action="/souls/{{ soul.slug }}/facts/remove" style="display:inline">
+        <input type="hidden" name="category" value="{{ item.category }}">
+        <input type="hidden" name="key" value="{{ item.key }}">
+        <button type="submit" class="danger small">Remove</button>
+      </form>
+      {% endif %}
+    </td>
+  </tr>
+  {% else %}
+  <tr><td colspan="5">No facts yet.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

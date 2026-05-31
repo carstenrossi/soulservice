@@ -5,38 +5,51 @@ from __future__ import annotations
 import logging
 from contextvars import ContextVar
 
-from sqlalchemy import text
 import uvicorn
-
 from mcp.server.fastmcp import FastMCP
+from sqlalchemy import text
 
-from soulservice.core.config import settings
-from soulservice.core.db import app_session_factory, get_scoped_session
 from soulservice.core.audit import log_tool_call
 from soulservice.core.auth import TokenIdentity, has_scope
+from soulservice.core.config import settings
+from soulservice.core.db import app_session_factory, get_scoped_session
 from soulservice.core.ratelimit import rate_limiter
 from soulservice.mcp.middleware import resolve_bearer_token
-from soulservice.mcp.tools.identity import get_self_core, get_relationship_overview
+from soulservice.mcp.tools.facts import (
+    forget_fact as facts_forget,
+)
+from soulservice.mcp.tools.facts import (
+    get_facts as facts_get,
+)
+from soulservice.mcp.tools.facts import (
+    learn_fact as facts_learn,
+)
+from soulservice.mcp.tools.identity import get_relationship_overview, get_self_core
 from soulservice.mcp.tools.memory import (
     recall as memory_recall,
+)
+from soulservice.mcp.tools.memory import (
     recall_recent as memory_recall_recent,
+)
+from soulservice.mcp.tools.memory import (
     remember_this as memory_remember_this,
+)
+from soulservice.mcp.tools.meta import health_check, whoami_info
+from soulservice.mcp.tools.properties import (
+    delete_property as properties_delete,
+)
+from soulservice.mcp.tools.properties import (
+    get_properties as properties_get,
+)
+from soulservice.mcp.tools.properties import (
+    set_property as properties_set,
 )
 from soulservice.mcp.tools.review import (
     decide_proposal as review_decide,
+)
+from soulservice.mcp.tools.review import (
     list_proposals as review_list_proposals,
 )
-from soulservice.mcp.tools.facts import (
-    forget_fact as facts_forget,
-    get_facts as facts_get,
-    learn_fact as facts_learn,
-)
-from soulservice.mcp.tools.properties import (
-    delete_property as properties_delete,
-    get_properties as properties_get,
-    set_property as properties_set,
-)
-from soulservice.mcp.tools.meta import health_check, whoami_info
 
 logger = logging.getLogger("soulservice.mcp")
 
@@ -152,7 +165,10 @@ async def whats_our_history() -> str:
 
 @mcp.tool()
 async def remember_this(content: str, tags: list[str] | None = None, salience: float = 0.5) -> str:
-    """Note something from the conversation worth keeping. Stored as pending proposal for human review."""
+    """Note something from the conversation worth keeping.
+
+    Stored as a pending proposal for human review.
+    """
     try:
         identity = _require_identity("write")
     except ValueError as e:

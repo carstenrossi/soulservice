@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Self Core – {{ soul.display_name }}{% endblock %}
+{% block content %}
+<h1>Self Core – {{ soul.display_name }} (v{{ version }})</h1>
+{% if error %}<p class="error">{{ error }}</p>{% endif %}
+<form method="post" action="/souls/{{ soul.slug }}/self-core" id="self-core-form">
+  <input type="hidden" name="version" value="{{ version }}">
+  <textarea id="editor" name="content" style="display:none">{{ content }}</textarea>
+  <div id="cm" class="codemirror-host"></div>
+  {% if can_edit %}
+  <label>Change note (optional)
+    <input type="text" name="note" placeholder="e.g. Refined voice section">
+  </label>
+  <button type="submit">Save</button>
+  {% else %}
+  <p class="notice">Read-only: your role cannot edit the Self Core.</p>
+  {% endif %}
+</form>
+<script type="module">
+  import { EditorView, basicSetup } from "https://esm.sh/codemirror@6.0.1";
+  import { yaml } from "https://esm.sh/@codemirror/lang-yaml@6.1.1";
+  const ta = document.getElementById("editor");
+  const view = new EditorView({
+    doc: ta.value,
+    extensions: [basicSetup, yaml()],
+    parent: document.getElementById("cm"),
+  });
+  document.getElementById("self-core-form").addEventListener("submit", () => {
+    ta.value = view.state.doc.toString();
+  });
+</script>
+{% endblock %}

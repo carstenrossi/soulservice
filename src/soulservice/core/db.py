@@ -4,8 +4,8 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from uuid import UUID
 
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from soulservice.core.config import settings
 
@@ -55,8 +55,7 @@ async def get_scoped_session(
     """
     tid = _validate_uuid(tenant_id)
     sid = _validate_uuid(soul_id)
-    async with app_session_factory() as session:
-        async with session.begin():
-            await session.execute(text(f"SET LOCAL app.current_tenant = '{tid}'"))
-            await session.execute(text(f"SET LOCAL app.current_soul = '{sid}'"))
-            yield session
+    async with app_session_factory() as session, session.begin():
+        await session.execute(text(f"SET LOCAL app.current_tenant = '{tid}'"))
+        await session.execute(text(f"SET LOCAL app.current_soul = '{sid}'"))
+        yield session

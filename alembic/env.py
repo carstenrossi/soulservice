@@ -5,9 +5,9 @@ from __future__ import annotations
 import asyncio
 from logging.config import fileConfig
 
-from alembic import context
 from sqlalchemy.ext.asyncio import create_async_engine
 
+from alembic import context
 from soulservice.core.config import settings
 
 config = context.config
@@ -15,16 +15,21 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 # Import all models so Alembic sees them
-from soulservice.models.tenant import Tenant, User  # noqa: F401, E402
-from soulservice.models.soul import Soul, SoulKey, SoulSelfCore, SoulSelfCoreHistory  # noqa: F401, E402
-from soulservice.models.token import ApiToken  # noqa: F401, E402
-from soulservice.models.memory import Memory  # noqa: F401, E402
+from sqlmodel import SQLModel  # noqa: E402
+
+from soulservice.models.audit import AuditLog  # noqa: F401, E402
 from soulservice.models.fact import Fact  # noqa: F401, E402
+from soulservice.models.memory import Memory  # noqa: F401, E402
 from soulservice.models.property import SoulProperty  # noqa: F401, E402
 from soulservice.models.proposal import Proposal  # noqa: F401, E402
-from soulservice.models.audit import AuditLog  # noqa: F401, E402
-
-from sqlmodel import SQLModel
+from soulservice.models.soul import (  # noqa: F401, E402
+    Soul,
+    SoulKey,
+    SoulSelfCore,
+    SoulSelfCoreHistory,
+)
+from soulservice.models.tenant import Tenant, User  # noqa: F401, E402
+from soulservice.models.token import ApiToken  # noqa: F401, E402
 
 target_metadata = SQLModel.metadata
 

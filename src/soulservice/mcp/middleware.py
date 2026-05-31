@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import UUID
 
 from sqlalchemy import text
@@ -36,7 +36,7 @@ async def resolve_bearer_token(authorization: str | None) -> TokenIdentity | Non
     for row in candidates:
         if row["revoked_at"] is not None:
             continue
-        if row["expires_at"] < datetime.now(timezone.utc):
+        if row["expires_at"] < datetime.now(UTC):
             continue
         if not verify_token(token, row["token_hash"]):
             continue

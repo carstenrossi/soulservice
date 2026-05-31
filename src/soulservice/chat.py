@@ -1,10 +1,12 @@
-"""Soulservice Chat – minimal terminal interface that connects Claude API with Soulservice MCP tools."""
+"""Soulservice Chat.
+
+A minimal terminal interface that connects the Claude API with Soulservice MCP tools.
+"""
 
 from __future__ import annotations
 
 import asyncio
 import json
-import sys
 
 import anthropic
 import httpx
@@ -44,7 +46,9 @@ Be transparent about this.
 MCP_TOOLS = [
     {
         "name": "who_are_you",
-        "description": "Load the Soul's identity (Self Core). Call this first in every conversation.",
+        "description": (
+            "Load the Soul's identity (Self Core). Call this first in every conversation."
+        ),
         "input_schema": {"type": "object", "properties": {}, "required": []},
     },
     {
@@ -54,7 +58,10 @@ MCP_TOOLS = [
     },
     {
         "name": "remember_this",
-        "description": "Store something worth remembering. Goes to pending review before becoming a confirmed memory.",
+        "description": (
+            "Store something worth remembering. Goes to pending review before "
+            "becoming a confirmed memory."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {
@@ -77,7 +84,10 @@ MCP_TOOLS = [
     },
     {
         "name": "recall",
-        "description": "Semantic search through confirmed memories. Use when you need context from past conversations.",
+        "description": (
+            "Semantic search through confirmed memories. Use when you need context "
+            "from past conversations."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {
@@ -232,7 +242,10 @@ async def chat():
 
     mcp_token = settings.chat_mcp_token
     if not mcp_token:
-        print("CHAT_MCP_TOKEN not set. Create one with: soulctl token create --soul george --name chat")
+        print(
+            "CHAT_MCP_TOKEN not set. Create one with: "
+            "soulctl token create --soul george --name chat"
+        )
         return
 
     mcp_url = f"http://localhost:{settings.soulservice_port}/mcp"

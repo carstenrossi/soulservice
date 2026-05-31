@@ -125,6 +125,49 @@ export DATABASE_URL SOULSERVICE_MASTER_KEY ANTHROPIC_API_KEY CHAT_MCP_TOKEN
 uv run soulservice-chat
 ```
 
+## Web UI (Admin)
+
+Local admin interface for reviewing proposals, browsing memories, editing Self Cores, managing facts/properties/tokens, and viewing the audit log. Runs **localhost-only** (port 6002).
+
+```bash
+# Apply migrations (magic-link tokens + app-role grants)
+uv run alembic upgrade head
+
+# Set in .env:
+# WEB_SESSION_SECRET=<random string>   # REQUIRED; python -c "import secrets; print(secrets.token_urlsafe(32))"
+# WEB_ADMIN_EMAILS=your@email.dev:admin
+
+# Start Postgres + Mailpit + Web UI
+docker compose --profile web up -d
+
+# Open http://localhost:6002 → enter your allowlisted email
+# Read the magic link in Mailpit: http://localhost:6004 → click "Confirm login"
+```
+
+Or run locally without Docker:
+
+```bash
+export DATABASE_URL SOULSERVICE_MASTER_KEY WEB_SESSION_SECRET WEB_ADMIN_EMAILS
+uv run python -m soulservice.web
+```
+
+### Security model
+
+- **Runs as the restricted `soulservice_app` role**, not the DB owner. Per-soul data is read/written through the same row-level-security (RLS) context as the MCP runtime; the UI no longer bypasses RLS.
+- **Magic-link auth**: 256-bit one-time tokens, only their SHA-256 hash is stored, short TTL. The link uses an explicit POST confirmation so email prefetchers cannot burn it. `/login` is rate-limited per IP+email.
+- **`WEB_SESSION_SECRET` is mandatory** — the app refuses to start without it (otherwise session cookies would be forgeable). Set `WEB_SECURE_COOKIES=true` behind TLS.
+- **Role-based access control** via `WEB_ADMIN_EMAILS` (`email:role`):
+
+  | Role     | Read pages | Edit memories/facts/properties/self-core | Create/revoke tokens |
+  |----------|:----------:|:----------------------------------------:|:--------------------:|
+  | `viewer` |     yes    |                    no                    |          no          |
+  | `editor` |     yes    |                    yes                   |          no          |
+  | `admin`  |     yes    |                    yes                   |          yes         |
+
+  A bare `email` (no `:role`) defaults to `admin` for backwards compatibility.
+
+**Residual risks (accepted):** the `souls`, `api_tokens`, and `audit_log` tables have no per-soul RLS policy, so isolation there relies on explicit `WHERE soul_id = ...` clauses (identical to the existing MCP design).
+
 ## Documentation
 
 - [Functional Overview](docs/functional-overview.md) — concepts, MCP tools, CLI, data model, encryption & security model, request flow.
@@ -140,7 +183,7 @@ src/soulservice/
 │   └── tools/      # who_are_you, whats_our_history, health, whoami
 ├── cli/            # soulctl: tenant/user/soul CRUD, self-core editor, tokens
 ├── chat.py         # Terminal chat interface (Claude API + MCP tools)
-└── web/            # Phase 3: FastAPI + HTMX admin UI
+└── web/            # FastAPI + HTMX admin UI (Phase 3)
 ```
 
 ## Token Modes: Identity vs. Messenger
@@ -233,7 +276,7 @@ soulctl health                            # Check DB connectivity
 
 - **Phase 1 (done):** MCP server, Self Core, Adaptation Layer, CLI, chat interface, security baseline
 - **Phase 2 (done):** Embeddings (Mistral), `recall()`, `remember_this()`, proposals, review workflow
-- **Phase 3 (in progress):** Facts (**done**), properties (**done**), Web UI (FastAPI + HTMX)
+- **Phase 3 (done):** Facts, properties, Web UI (FastAPI + HTMX, magic-link auth via Mailpit)
 - **Phase 4:** Dream Phase + self-reflection — post-conversation reflections, nightly extraction of adaptations from memories
 - **Phase 5:** OAuth, key rotation, local embeddings
 - **Phase 5.5:** Emergent Self — narrative self-image, contemplation loop, autonomous self-evaluation

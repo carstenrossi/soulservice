@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from sqlalchemy import text
@@ -191,7 +191,7 @@ async def recall_recent(
 ) -> str:
     """Return the most recent confirmed memories (chronological, no embedding needed)."""
     dek = await _get_dek(session, soul_id)
-    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    cutoff = datetime.now(UTC) - timedelta(days=days)
 
     rows = await session.execute(
         text("""

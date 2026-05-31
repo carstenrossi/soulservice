@@ -49,6 +49,8 @@ services:
       # Restricted runtime connection (RLS-enforced) — per-soul reads/writes
       APP_DATABASE_URL: postgresql+asyncpg://soulservice_app:soulservice_app_pw@postgres:5432/soulservice
       SOULSERVICE_MASTER_KEY: ${SOULSERVICE_MASTER_KEY}
+      # Needed when importing souls re-computes memory embeddings
+      MISTRAL_API_KEY: ${MISTRAL_API_KEY:-}
       WEB_HOST: "0.0.0.0"
       WEB_BASE_URL: http://localhost:6002
       WEB_SESSION_SECRET: ${WEB_SESSION_SECRET:-}

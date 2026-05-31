@@ -41,7 +41,7 @@ Tool Handlers (RLS enforces isolation)
 - **Envelope encryption.** One master key (in env), one DEK per soul. Master key rotation re-encrypts DEKs, not data.
 - **Separation of identity and model.** The frontend LLM is swappable. Souls persist.
 - **Two token modes.** Identity mode (LLM becomes the soul) and messenger mode (LLM channels the soul) — same server, different framing, chosen per client.
-- **Review gate against drift.** Learning doesn't happen automatically — proposals go through human review.
+- **Memories flow in, suspicious ones don't.** Notes captured in conversation become active memory immediately so a Soul can grow mid-conversation. Only entries matching an injection pattern are held back for human review; any memory can be revoked afterwards in the Web UI. Structural learning (Self Core, adaptations) still changes only deliberately.
 - **Neuroplasticity.** Souls grow through experience. The Self Core (values, voice) is the constitution; the Adaptation Layer (opinions, relationship depth, shared references) accumulates organically from memories.
 - **Narrative identity.** A Soul develops a sense of self not through parameter updates, but by writing its own story — a self-narrative that evolves through reflection, anchored by an immutable core.
 
@@ -127,7 +127,7 @@ uv run soulservice-chat
 
 ## Web UI (Admin)
 
-Local admin interface for reviewing proposals, browsing memories, editing Self Cores, managing facts/properties/tokens, and viewing the audit log. Runs **localhost-only** (port 6002).
+Local admin interface for reviewing flagged memories, browsing/revoking memories, editing Self Cores, managing facts/properties/tokens, exporting/importing whole Souls, and viewing the audit log. Runs **localhost-only** (port 6002).
 
 ```bash
 # Apply migrations (magic-link tokens + app-role grants)
@@ -216,11 +216,11 @@ Each API token has a **mode** that controls how the server frames tool responses
 | `whats_our_history()` | 1 | Relationship overview and current topics. |
 | `whoami()` | 1 | Which Soul, Tenant, User is this token bound to? |
 | `health()` | 1 | Server health check. |
-| `remember_this(content, tags?, salience?)` | 2 | Note something from conversation (pending review). |
+| `remember_this(content, tags?, salience?)` | 2 | Note something from conversation. Active immediately; only injection-flagged notes are held for review. |
 | `recall(query, k?)` | 2 | Semantic search through confirmed memories. |
 | `recall_recent(days?)` | 2 | Get recent memories (chronological). |
-| `list_proposals(status?)` | 2 | List conversation notes pending human review. |
-| `decide(proposal_id, action, note?)` | 2 | Approve or reject a conversation note. |
+| `list_proposals(status?)` | 2 | List memories held for review (injection-flagged). |
+| `decide(proposal_id, action, note?)` | 2 | Confirm or reject a held memory. |
 | `learn_fact(category, key, value, confidence?)` | 3 | Store or update a structured fact. |
 | `get_facts(category?)` | 3 | Retrieve stored facts, optionally by category. |
 | `forget_fact(category, key)` | 3 | Soft-delete a fact that is no longer accurate. |
@@ -234,6 +234,10 @@ Each API token has a **mode** that controls how the server frames tool responses
 soulctl init                              # Seed tenant/user/soul
 soulctl tenant create "My Tenant"         # Create tenant
 soulctl soul create --user <id> --slug ai --display "AI"
+soulctl soul export --soul mysoul --out mysoul.zip          # Portable ZIP bundle (decrypted plaintext)
+soulctl soul export --soul mysoul --include-audit --all-statuses
+soulctl soul import mysoul.zip --user <id> --slug copy --display "Copy"   # Import as a new soul
+soulctl soul import mysoul.zip --into existing --on-conflict skip         # Merge into an existing soul
 soulctl self-core edit --soul mysoul      # Open Self Core in $EDITOR
 soulctl self-core export --soul mysoul    # Export as YAML
 soulctl self-core import --soul mysoul < soul.yaml
@@ -269,7 +273,7 @@ soulctl health                            # Check DB connectivity
 - **Token auth:** Argon2id hashing (OWASP 2026 recommendation), mandatory expiry, per-client tokens.
 - **Scope enforcement:** Tokens carry `read`/`write` scopes. Write tools (`remember_this`, `decide`, `learn_fact`, `forget_fact`, `set_property`, `delete_property`) require the `write` scope; read tools require `read`. Create read-only tokens with `--read-only`.
 - **Audit log:** Append-only, every tool invocation recorded with args hash (never plaintext).
-- **Prompt injection hardening:** Retrieved content wrapped in `<retrieved_memory untrusted="true">`, `<retrieved_fact untrusted="true">`, and `<retrieved_property untrusted="true">` tags, injection patterns flagged.
+- **Prompt injection hardening:** Retrieved content wrapped in `<retrieved_memory untrusted="true">`, `<retrieved_fact untrusted="true">`, and `<retrieved_property untrusted="true">` tags. New memories are scanned for known injection patterns; matches are held as `pending` for human review instead of entering recall.
 - **Restricted DB user:** App runtime uses a dedicated `soulservice_app` role (no `BYPASSRLS`, RLS forced) separate from the owner/migration role; no `DELETE` on the audit log.
 
 ## Roadmap

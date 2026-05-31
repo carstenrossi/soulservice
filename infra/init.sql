@@ -159,6 +159,8 @@ CREATE TABLE soul_properties (
   value_encrypted BYTEA,
   value_nonce BYTEA,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  status TEXT NOT NULL DEFAULT 'active'
+    CHECK (status IN ('active', 'deleted')),
   UNIQUE (tenant_id, soul_id, property_type)
 );
 

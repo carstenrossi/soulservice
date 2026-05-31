@@ -6,6 +6,7 @@ Speaks directly to the database (admin context), not via MCP.
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import subprocess
 import sys
@@ -29,6 +30,11 @@ from soulservice.core.crypto import (
 from soulservice.core.db import async_session_factory
 from soulservice.core.embeddings import embed_text
 from soulservice.models.adaptation import ADAPTATION_CATEGORIES
+from soulservice.mcp.tools.properties import (
+    delete_property as properties_delete,
+    deserialize_value,
+    set_property as properties_set,
+)
 
 # ── Helpers ──────────────────────────────────────────────────────
 
@@ -1483,6 +1489,200 @@ def fact_remove(soul_slug: str, category: str, key: str):
 
     _run(_remove())
     click.echo(f"Fact '{category}/{key}' removed.")
+
+
+# ── Property ──────────────────────────────────────────────────
+
+
+@cli.group("property")
+def property_group():
+    """Manage soul properties (typed structured data)."""
+
+
+@property_group.command("set")
+@click.option("--soul", "soul_slug", required=True, help="Soul slug")
+@click.option("--type", "property_type", required=True, help="Property type")
+@click.argument("json_value")
+def property_set(soul_slug: str, property_type: str, json_value: str):
+    """Set a property. JSON_VALUE is a JSON object string."""
+    try:
+        value = json.loads(json_value)
+    except json.JSONDecodeError as e:
+        click.echo(f"Error: invalid JSON: {e}", err=True)
+        raise SystemExit(1)
+
+    async def _set():
+        async with async_session_factory() as session:
+            row = await session.execute(
+                text("SELECT id, tenant_id FROM souls WHERE slug = :slug"),
+                {"slug": soul_slug},
+            )
+            soul_row = row.mappings().first()
+            if not soul_row:
+                click.echo(f"Error: soul '{soul_slug}' not found.", err=True)
+                raise SystemExit(1)
+            msg = await properties_set(
+                session, soul_row["tenant_id"], soul_row["id"], property_type, value
+            )
+            await session.commit()
+            return msg
+
+    click.echo(_run(_set()))
+
+
+@property_group.command("list")
+@click.option("--soul", "soul_slug", required=True, help="Soul slug")
+@click.option("--type", "property_type", default=None, help="Filter by property type")
+def property_list(soul_slug: str, property_type: str | None):
+    """List properties for a soul."""
+
+    async def _list():
+        async with async_session_factory() as session:
+            row = await session.execute(
+                text("SELECT id FROM souls WHERE slug = :slug"),
+                {"slug": soul_slug},
+            )
+            soul_row = row.mappings().first()
+            if not soul_row:
+                click.echo(f"Error: soul '{soul_slug}' not found.", err=True)
+                raise SystemExit(1)
+
+            soul_id = soul_row["id"]
+
+            dek_row = await session.execute(
+                text("SELECT dek_encrypted FROM soul_keys WHERE soul_id = :sid"),
+                {"sid": str(soul_id)},
+            )
+            dek_result = dek_row.mappings().first()
+            if not dek_result:
+                click.echo("Error: no encryption key for this soul.", err=True)
+                raise SystemExit(1)
+            dek = decrypt_dek(bytes(dek_result["dek_encrypted"]))
+
+            if property_type:
+                rows = await session.execute(
+                    text(
+                        "SELECT property_type, schema_version, value, is_sensitive, "
+                        "value_encrypted, value_nonce, updated_at "
+                        "FROM soul_properties WHERE soul_id = :sid AND status = 'active' "
+                        "AND property_type = :ptype ORDER BY property_type"
+                    ),
+                    {"sid": str(soul_id), "ptype": property_type},
+                )
+            else:
+                rows = await session.execute(
+                    text(
+                        "SELECT property_type, schema_version, value, is_sensitive, "
+                        "value_encrypted, value_nonce, updated_at "
+                        "FROM soul_properties WHERE soul_id = :sid AND status = 'active' "
+                        "ORDER BY property_type"
+                    ),
+                    {"sid": str(soul_id)},
+                )
+
+            results = []
+            for prop in rows.mappings().all():
+                value_dict = deserialize_value(
+                    prop, dek if prop["is_sensitive"] else None
+                )
+                results.append({**prop, "value_dict": value_dict})
+            return results
+
+    props = _run(_list())
+    if not props:
+        click.echo("No properties found.")
+        return
+
+    click.echo(f"{len(props)} property(ies):\n")
+    for prop in props:
+        preview = json.dumps(prop["value_dict"], ensure_ascii=False)[:80]
+        if len(json.dumps(prop["value_dict"])) > 80:
+            preview += "..."
+        click.echo(
+            f"  {prop['property_type']:25s}  v{prop['schema_version']}  "
+            f"{'[encrypted]' if prop['is_sensitive'] else ''}  {preview}"
+        )
+
+
+@property_group.command("get")
+@click.option("--soul", "soul_slug", required=True, help="Soul slug")
+@click.option("--type", "property_type", required=True, help="Property type")
+def property_get(soul_slug: str, property_type: str):
+    """Get a single property's value."""
+
+    async def _get():
+        async with async_session_factory() as session:
+            row = await session.execute(
+                text("SELECT id FROM souls WHERE slug = :slug"),
+                {"slug": soul_slug},
+            )
+            soul_row = row.mappings().first()
+            if not soul_row:
+                click.echo(f"Error: soul '{soul_slug}' not found.", err=True)
+                raise SystemExit(1)
+
+            soul_id = soul_row["id"]
+
+            dek_row = await session.execute(
+                text("SELECT dek_encrypted FROM soul_keys WHERE soul_id = :sid"),
+                {"sid": str(soul_id)},
+            )
+            dek_result = dek_row.mappings().first()
+            if not dek_result:
+                click.echo("Error: no encryption key for this soul.", err=True)
+                raise SystemExit(1)
+            dek = decrypt_dek(bytes(dek_result["dek_encrypted"]))
+
+            prop_row = await session.execute(
+                text(
+                    "SELECT property_type, schema_version, value, is_sensitive, "
+                    "value_encrypted, value_nonce, updated_at "
+                    "FROM soul_properties WHERE soul_id = :sid AND property_type = :ptype "
+                    "AND status = 'active'"
+                ),
+                {"sid": str(soul_id), "ptype": property_type},
+            )
+            result = prop_row.mappings().first()
+            if not result:
+                click.echo(f"Error: no active property '{property_type}'.", err=True)
+                raise SystemExit(1)
+
+            value_dict = deserialize_value(
+                result, dek if result["is_sensitive"] else None
+            )
+            return value_dict, result["schema_version"], result["updated_at"]
+
+    value, schema_version, updated_at = _run(_get())
+    click.echo(
+        f"  {property_type}  (v{schema_version}, updated={updated_at})"
+    )
+    click.echo(json.dumps(value, ensure_ascii=False, indent=2))
+
+
+@property_group.command("remove")
+@click.option("--soul", "soul_slug", required=True, help="Soul slug")
+@click.option("--type", "property_type", required=True, help="Property type")
+@click.confirmation_option(prompt="Remove this property?")
+def property_remove(soul_slug: str, property_type: str):
+    """Soft-delete a property."""
+
+    async def _remove():
+        async with async_session_factory() as session:
+            row = await session.execute(
+                text("SELECT id FROM souls WHERE slug = :slug"),
+                {"slug": soul_slug},
+            )
+            soul_row = row.mappings().first()
+            if not soul_row:
+                click.echo(f"Error: soul '{soul_slug}' not found.", err=True)
+                raise SystemExit(1)
+
+            soul_id = soul_row["id"]
+            msg = await properties_delete(session, soul_id, property_type)
+            await session.commit()
+            return msg
+
+    click.echo(_run(_remove()))
 
 
 # ── Health ───────────────────────────────────────────────────────

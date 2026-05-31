@@ -173,6 +173,9 @@ Each API token has a **mode** that controls how the server frames tool responses
 | `learn_fact(category, key, value, confidence?)` | 3 | Store or update a structured fact. |
 | `get_facts(category?)` | 3 | Retrieve stored facts, optionally by category. |
 | `forget_fact(category, key)` | 3 | Soft-delete a fact that is no longer accurate. |
+| `set_property(property_type, value)` | 3 | Store or update a typed property (JSON object). |
+| `get_properties(property_type?)` | 3 | Retrieve stored properties, optionally by type. |
+| `delete_property(property_type)` | 3 | Soft-delete a property that no longer applies. |
 
 ## CLI (`soulctl`)
 
@@ -197,6 +200,12 @@ soulctl fact list --soul mysoul
 soulctl fact list --soul mysoul --category user_profile
 soulctl fact get --soul mysoul --category user_profile --key employer
 soulctl fact remove --soul mysoul --category user_profile --key employer
+soulctl property set --soul mysoul --type communication_style '{"formality":"casual","humor":"dry"}'
+soulctl property set --soul mysoul --type locale '{"language":"de","timezone":"Europe/Berlin"}'
+soulctl property list --soul mysoul
+soulctl property list --soul mysoul --type communication_style
+soulctl property get --soul mysoul --type communication_style
+soulctl property remove --soul mysoul --type communication_style
 soulctl health                            # Check DB connectivity
 ```
 
@@ -206,14 +215,14 @@ soulctl health                            # Check DB connectivity
 - **Row Level Security:** Postgres RLS on all sensitive tables, scoped per tenant + soul per request.
 - **Token auth:** Argon2id hashing (OWASP 2026 recommendation), mandatory expiry, per-client tokens.
 - **Audit log:** Append-only, every tool invocation recorded with args hash (never plaintext).
-- **Prompt injection hardening:** Retrieved content wrapped in `<retrieved_memory untrusted="true">` tags, injection patterns flagged.
+- **Prompt injection hardening:** Retrieved content wrapped in `<retrieved_memory untrusted="true">`, `<retrieved_fact untrusted="true">`, and `<retrieved_property untrusted="true">` tags, injection patterns flagged.
 - **Restricted DB user:** App user has no `BYPASSRLS`, no `DELETE` on audit log.
 
 ## Roadmap
 
 - **Phase 1 (done):** MCP server, Self Core, Adaptation Layer, CLI, chat interface, security baseline
 - **Phase 2 (done):** Embeddings (Mistral), `recall()`, `remember_this()`, proposals, review workflow
-- **Phase 3 (in progress):** Facts (**done**), properties, Web UI (FastAPI + HTMX)
+- **Phase 3 (in progress):** Facts (**done**), properties (**done**), Web UI (FastAPI + HTMX)
 - **Phase 4:** Dream Phase + self-reflection — post-conversation reflections, nightly extraction of adaptations from memories
 - **Phase 5:** OAuth, key rotation, local embeddings
 - **Phase 5.5:** Emergent Self — narrative self-image, contemplation loop, autonomous self-evaluation

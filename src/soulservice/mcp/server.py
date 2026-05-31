@@ -31,6 +31,11 @@ from soulservice.mcp.tools.facts import (
     get_facts as facts_get,
     learn_fact as facts_learn,
 )
+from soulservice.mcp.tools.properties import (
+    delete_property as properties_delete,
+    get_properties as properties_get,
+    set_property as properties_set,
+)
 from soulservice.mcp.tools.meta import health_check, whoami_info
 
 logger = logging.getLogger("soulservice.mcp")
@@ -356,6 +361,92 @@ async def forget_fact(category: str, key: str) -> str:
             soul_id=identity.soul_id,
             token_id=identity.token_id,
             tool_name="forget_fact",
+            result_size=len(result),
+        )
+
+    return result
+
+
+@mcp.tool()
+async def set_property(property_type: str, value: dict) -> str:
+    """Store or update a typed property (e.g. communication_style, boundaries)."""
+    try:
+        identity = _require_identity()
+    except ValueError as e:
+        return f"Error: {e}"
+
+    async with get_scoped_session(identity.tenant_id, identity.soul_id) as session:
+        result = await properties_set(
+            session,
+            identity.tenant_id,
+            identity.soul_id,
+            property_type,
+            value,
+        )
+
+        await log_tool_call(
+            session,
+            tenant_id=identity.tenant_id,
+            user_id=identity.user_id,
+            soul_id=identity.soul_id,
+            token_id=identity.token_id,
+            tool_name="set_property",
+            result_size=len(result),
+        )
+
+    return result
+
+
+@mcp.tool()
+async def get_properties(property_type: str | None = None) -> str:
+    """Retrieve stored properties, optionally filtered by type."""
+    try:
+        identity = _require_identity()
+    except ValueError as e:
+        return f"Error: {e}"
+
+    async with get_scoped_session(identity.tenant_id, identity.soul_id) as session:
+        result = await properties_get(
+            session,
+            identity.soul_id,
+            property_type=property_type,
+        )
+
+        await log_tool_call(
+            session,
+            tenant_id=identity.tenant_id,
+            user_id=identity.user_id,
+            soul_id=identity.soul_id,
+            token_id=identity.token_id,
+            tool_name="get_properties",
+            result_size=len(result),
+        )
+
+    return result
+
+
+@mcp.tool()
+async def delete_property(property_type: str) -> str:
+    """Soft-delete a property that no longer applies."""
+    try:
+        identity = _require_identity()
+    except ValueError as e:
+        return f"Error: {e}"
+
+    async with get_scoped_session(identity.tenant_id, identity.soul_id) as session:
+        result = await properties_delete(
+            session,
+            identity.soul_id,
+            property_type,
+        )
+
+        await log_tool_call(
+            session,
+            tenant_id=identity.tenant_id,
+            user_id=identity.user_id,
+            soul_id=identity.soul_id,
+            token_id=identity.token_id,
+            tool_name="delete_property",
             result_size=len(result),
         )
 

@@ -3,6 +3,8 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID, uuid4
 
+from sqlalchemy import Column
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlmodel import Field, SQLModel
 
 
@@ -14,8 +16,12 @@ class SoulProperty(SQLModel, table=True):
     soul_id: UUID = Field(foreign_key="souls.id")
     property_type: str
     schema_version: int
-    value: dict = Field(default_factory=dict)
+    value: dict = Field(
+        default_factory=dict,
+        sa_column=Column(JSONB, nullable=False),
+    )
     is_sensitive: bool = False
     value_encrypted: bytes | None = None
     value_nonce: bytes | None = None
     updated_at: datetime = Field(default_factory=datetime.utcnow)
+    status: str = "active"

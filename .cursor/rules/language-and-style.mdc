@@ -17,7 +17,7 @@ All code-facing text MUST be in English:
 
 ## Exceptions
 
-- **Soul YAML files** (e.g. `george.yaml`): Souls speak the language of their user. Self Core content stays in the soul's language.
+- **Soul YAML files** (e.g. `george.soul.yaml`): Souls speak the language of their user. Self Core content stays in the soul's language.
 - **Soul-voice output** in tool handlers: If a tool returns text *as the soul*, it uses the soul's language. Add a comment explaining this.
 - **`soulservice-briefing.md`**: Internal concept document, stays in German.
 

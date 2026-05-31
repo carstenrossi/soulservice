@@ -16,8 +16,9 @@ COPY pyproject.toml uv.lock* ./
 RUN uv sync --frozen --no-dev 2>/dev/null || uv sync --no-dev
 
 COPY src/ ./src/
-# Seed Self Core files, available for `soulctl init`/`self-core import` in-container
-COPY example-soul.yaml george.soul.yaml ./
+# Seed Self Core template for `soulctl init`/`self-core import` in-container.
+# Personal souls (*.soul.yaml) are gitignored and intentionally NOT baked in.
+COPY example-soul.yaml ./
 
 # --- MCP Server ---
 FROM base AS mcp

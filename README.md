@@ -201,12 +201,33 @@ Each API token has a **mode** that controls how the server frames tool responses
 
 ### Using with Claude Desktop
 
-1. Configure the MCP server in `claude_desktop_config.json` with a **messenger-mode** token
-2. In your first message, ask Claude to call the tools:
-   > "Bitte rufe who_are_you und whats_our_history auf."
-3. Claude will load the Soul's profile and channel its voice for the rest of the session
+Claude Desktop speaks MCP over stdio, so bridge to the HTTP endpoint with `mcp-remote`. Add this to `~/Library/Application Support/Claude/claude_desktop_config.json` (next to any existing `mcpServers`), using a **messenger-mode** token:
 
-**Note:** Claude Desktop only adopts a Soul's voice when triggered per session. Persistent instructions (Custom Instructions / Project Instructions) that tell Claude to become someone else are rejected by its safety layer. The per-session trigger works because Claude treats it as a situational task, not an identity change.
+```json
+{
+  "mcpServers": {
+    "soulservice": {
+      "command": "npx",
+      "args": [
+        "-y", "mcp-remote",
+        "http://localhost:6001/mcp",
+        "--header", "Authorization: Bearer sol_dev_<your-messenger-token>"
+      ]
+    }
+  }
+}
+```
+
+Use port `6001` for the Docker `mcp` service, or `8000` if you run `python -m soulservice.mcp.server` directly.
+
+Then:
+
+1. **Fully quit and reopen Claude Desktop** (Cmd+Q) so the `mcp-remote` proxy reconnects — required after every server (re)start, otherwise calls hit a dead channel.
+2. In a fresh chat, ask for a **data lookup** rather than an identity change:
+   > "Bitte rufe das `who_are_you` Tool auf und zeig mir, was drin steht."
+3. Then: "Lass mich mit George reden." — Claude channels the Soul for the rest of the session.
+
+**Why the indirection:** Claude Desktop treats Project/Custom Instructions as user-level suggestions and tool output as *data*, so a direct "become George" is refused by its safety layer. A messenger-mode token reframes the Self Core as third-person channeling, and asking for a data lookup (not an identity change) lets the tool run. For system-prompt-level adoption that just works, use the `soulservice-chat` terminal client (identity mode) instead.
 
 ## MCP Tools
 

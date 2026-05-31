@@ -44,7 +44,10 @@ services:
     ports:
       - "127.0.0.1:6002:8000"
     environment:
+      # Owner connection: admin/bootstrap reads only
       DATABASE_URL: postgresql+asyncpg://soulservice:${POSTGRES_PASSWORD}@postgres:5432/soulservice
+      # Restricted runtime connection (RLS-enforced) — per-soul reads/writes
+      APP_DATABASE_URL: postgresql+asyncpg://soulservice_app:soulservice_app_pw@postgres:5432/soulservice
       SOULSERVICE_MASTER_KEY: ${SOULSERVICE_MASTER_KEY}
       WEB_HOST: "0.0.0.0"
       WEB_BASE_URL: http://localhost:6002

@@ -59,8 +59,9 @@ MCP_TOOLS = [
     {
         "name": "remember_this",
         "description": (
-            "Store something worth remembering. Goes to pending review before "
-            "becoming a confirmed memory."
+            "Store something worth remembering. Becomes an active memory "
+            "immediately; only entries that match a suspicious injection "
+            "pattern are held back for manual review."
         ),
         "input_schema": {
             "type": "object",

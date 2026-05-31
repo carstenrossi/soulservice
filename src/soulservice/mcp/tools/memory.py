@@ -73,15 +73,18 @@ async def remember_this(
     salience: float = 0.5,
     source_client: str | None = None,
 ) -> str:
-    """Store a new memory as a pending proposal.
+    """Store a new memory.
 
-    Content is encrypted, embedded, and flagged for injection patterns.
+    Content is encrypted, embedded, and scanned for injection patterns.
+    Clean memories become active immediately (status 'confirmed'). Memories
+    that match an injection pattern are held as 'pending' for manual review.
     """
     if len(content) > CONTENT_MAX_LEN:
         return f"Error: content too long (max {CONTENT_MAX_LEN} chars)."
 
     clean_tags = _validate_tags(tags or [])
     injection_flags = detect_injection_patterns(content)
+    status = "pending" if injection_flags else "confirmed"
 
     dek = await _get_dek(session, soul_id)
     ct, nonce = encrypt_content(content, dek, build_aad(soul_id, "memory"))
@@ -95,7 +98,7 @@ async def remember_this(
                  embedding, salience, status, tags, injection_flags, source_client)
             VALUES
                 (:tid, :sid, :ct, :nonce,
-                 CAST(:emb AS vector), :sal, 'pending', :tags, :flags, :client)
+                 CAST(:emb AS vector), :sal, :status, :tags, :flags, :client)
         """),
         {
             "tid": str(tenant_id),
@@ -104,17 +107,19 @@ async def remember_this(
             "nonce": nonce,
             "emb": embedding_str,
             "sal": salience,
+            "status": status,
             "tags": clean_tags,
             "flags": injection_flags,
             "client": source_client,
         },
     )
 
-    flag_note = ""
     if injection_flags:
-        flag_note = f" Warning: injection patterns detected: {injection_flags}."
-
-    return f"Memory noted (pending review).{flag_note}"
+        return (
+            "Memory held for review (injection patterns detected: "
+            f"{injection_flags})."
+        )
+    return "Memory stored."
 
 
 async def recall(

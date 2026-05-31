@@ -476,6 +476,37 @@ class TestRBAC:
         mock_create.assert_awaited_once()
 
 
+class TestMemoryRevoke:
+    pytestmark = pytest.mark.asyncio
+
+    async def test_viewer_cannot_revoke(self, client):
+        await _login_as(client, "viewer@test.dev")
+        response = await client.post(
+            "/souls/george/memories/abc/forget", follow_redirects=False
+        )
+        assert response.status_code == 403
+
+    async def test_editor_can_revoke(self, client):
+        await _login_as(client, "editor@test.dev")
+        with (
+            patch(
+                "soulservice.web.routes.memories.soul_context",
+                _fake_soul_context(),
+            ),
+            patch(
+                "soulservice.web.queries.forget_memory_web",
+                new=AsyncMock(),
+            ) as mock_forget,
+        ):
+            response = await client.post(
+                "/souls/george/memories/abc/forget", follow_redirects=False
+            )
+        assert response.status_code == 303
+        assert response.headers["location"] == "/souls/george/memories"
+        mock_forget.assert_awaited_once()
+        assert mock_forget.call_args[0][2] == "abc"
+
+
 class TestSelfCoreConcurrency:
     pytestmark = pytest.mark.asyncio
 

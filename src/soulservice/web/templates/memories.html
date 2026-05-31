@@ -17,6 +17,13 @@
   </div>
   {% if item.decryption_failed %}<span class="flag">decryption failed</span>{% endif %}
   <p class="card-body preview">{{ item.content[:300] }}{% if item.content|length > 300 %}…{% endif %}</p>
+  {% if can_edit %}
+  <div class="card-actions">
+    <form method="post" action="/souls/{{ soul.slug }}/memories/{{ item.id }}/forget" onsubmit="return confirm('Revoke this memory? It will no longer be recalled.');">
+      <button type="submit" class="danger">Revoke</button>
+    </form>
+  </div>
+  {% endif %}
 </div>
 {% else %}
 <p>No memories found.</p>

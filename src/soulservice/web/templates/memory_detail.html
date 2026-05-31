@@ -7,8 +7,8 @@
   {% if memory.decryption_failed %}<span class="flag">decryption failed</span>{% endif %}
   <pre class="memory-content">{{ memory.content }}</pre>
   {% if can_edit and memory.status in ("confirmed", "pending") %}
-  <form method="post" action="/souls/{{ soul.slug }}/memories/{{ memory.id }}/forget" onsubmit="return confirm('Mark this memory as forgotten?');">
-    <button type="submit" class="danger">Forget</button>
+  <form method="post" action="/souls/{{ soul.slug }}/memories/{{ memory.id }}/forget" onsubmit="return confirm('Revoke this memory? It will no longer be recalled.');">
+    <button type="submit" class="danger">Revoke</button>
   </form>
   {% endif %}
 </div>

@@ -9,6 +9,11 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from soulservice.core.crypto import build_aad, decrypt_content, decrypt_dek, dek_cache
+from soulservice.mcp.tools.memory import wrap_untrusted
+
+# How many recent memories whats_our_history() surfaces as a warm-up baseline.
+# Topic-specific recollection is the job of recall(query), not this overview.
+HISTORY_RECENT_LIMIT = 8
 
 MESSENGER_SELF_CORE_PREFIX = """\
 Below is the personality profile of a Soul named {soul_name}.
@@ -94,27 +99,72 @@ async def get_self_core(
 async def get_relationship_overview(
     session: AsyncSession, soul_id: UUID, *, mode: str = "identity"
 ) -> str:
-    """Build a relationship overview from recent memories.
+    """Build a relationship overview from the soul's confirmed memories.
 
-    Phase 1: returns a static placeholder.
-    Phase 2+: will query memories and build a dynamic summary.
+    Returns a chronological warm-up baseline (the most recent memories plus a
+    total count) so the soul starts a session aware of its shared history.
+    For topic-specific recollection the soul should call recall(query); this
+    overview deliberately stays chronological, not semantic.
     """
-    # Phase 1 placeholder in the soul's language (German for George).
-    # Phase 2+ will build this dynamically from memories.
-    first_person = (
-        "Wir stehen am Anfang. Ich kenne dich aus dem, was du mir in meinen "
-        "Self Core mitgegeben hast, aber wir haben noch keine gemeinsamen "
-        "Erinnerungen. Das kommt."
+    dek = await _get_dek(session, soul_id)
+
+    total = (
+        await session.execute(
+            text(
+                "SELECT count(*) FROM memories "
+                "WHERE soul_id = :sid AND status = 'confirmed'"
+            ),
+            {"sid": str(soul_id)},
+        )
+    ).scalar() or 0
+
+    if total == 0:
+        # No shared history yet — soul-voice placeholder (German for George).
+        first_person = (
+            "Wir stehen am Anfang. Ich kenne dich aus dem, was du mir in meinen "
+            "Self Core mitgegeben hast, aber wir haben noch keine gemeinsamen "
+            "Erinnerungen. Das kommt."
+        )
+        if mode == "messenger":
+            soul_name = await _get_soul_display_name(session, soul_id)
+            return MESSENGER_HISTORY_PREFIX.format(soul_name=soul_name) + first_person
+        return first_person
+
+    rows = await session.execute(
+        text(
+            "SELECT id, content_encrypted, content_nonce, created_at, salience "
+            "FROM memories WHERE soul_id = :sid AND status = 'confirmed' "
+            "ORDER BY created_at DESC LIMIT :lim"
+        ),
+        {"sid": str(soul_id), "lim": HISTORY_RECENT_LIMIT},
     )
+    aad = build_aad(soul_id, "memory")
+    parts = []
+    for row in rows.mappings().all():
+        plaintext = decrypt_content(
+            bytes(row["content_encrypted"]),
+            bytes(row["content_nonce"]),
+            dek,
+            aad,
+        )
+        created = row["created_at"].strftime("%Y-%m-%d")
+        header = f"[{created}, salience={row['salience']:.1f}]"
+        parts.append(wrap_untrusted(str(row["id"]), f"{header}\n{plaintext}"))
+
+    noun = "memory" if total == 1 else "memories"
+    # Instructional framing for the embodying LLM — English per project style.
+    intro = (
+        f"Shared history with this user ({total} {noun} so far, most recent "
+        f"first). Let these inform who you are together. When the conversation "
+        f"touches a specific person, event, preference, or past topic, call "
+        f"recall(query) to look up what is relevant."
+    )
+    body = intro + "\n\n" + "\n\n".join(parts)
 
     if mode == "messenger":
         soul_name = await _get_soul_display_name(session, soul_id)
-        return (
-            MESSENGER_HISTORY_PREFIX.format(soul_name=soul_name)
-            + first_person
-        )
-
-    return first_person
+        return MESSENGER_HISTORY_PREFIX.format(soul_name=soul_name) + body
+    return body
 
 
 # ── Adaptation Layer ──────────────────────────────────────────

@@ -53,7 +53,10 @@ MCP_TOOLS = [
     },
     {
         "name": "whats_our_history",
-        "description": "Relationship overview and current topics. Call after who_are_you().",
+        "description": (
+            "Relationship overview and recent shared history (most recent memories). "
+            "Call after who_are_you(). For specific topics, use recall()."
+        ),
         "input_schema": {"type": "object", "properties": {}, "required": []},
     },
     {
@@ -86,8 +89,9 @@ MCP_TOOLS = [
     {
         "name": "recall",
         "description": (
-            "Semantic search through confirmed memories. Use when you need context "
-            "from past conversations."
+            "Semantic search through your memories. Call whenever the conversation "
+            "references a specific person, place, event, preference, or past topic — "
+            "or before answering anything that depends on shared history."
         ),
         "input_schema": {
             "type": "object",

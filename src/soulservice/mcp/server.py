@@ -63,6 +63,10 @@ mcp = FastMCP(
         "You have access to a character context service. "
         "Call who_are_you() to load the character profile for this session, "
         "then whats_our_history() for shared context. "
+        "During the conversation, call recall(query) whenever a specific topic, "
+        "person, place, or past event comes up — before answering anything that "
+        "depends on what you and this user have shared — and remember_this(...) "
+        "to store new things worth keeping. "
         "Use this information to inform your tone and responses."
     ),
 )
@@ -139,7 +143,10 @@ async def who_are_you() -> str:
 
 @mcp.tool()
 async def whats_our_history() -> str:
-    """Load relationship context and shared history. Call after who_are_you()."""
+    """Load relationship context and recent shared history (most recent memories).
+
+    Call after who_are_you(). For specific topics or older context, use recall(query).
+    """
     try:
         identity = _require_identity()
     except ValueError as e:
@@ -167,7 +174,8 @@ async def whats_our_history() -> str:
 async def remember_this(content: str, tags: list[str] | None = None, salience: float = 0.5) -> str:
     """Note something from the conversation worth keeping.
 
-    Stored as a pending proposal for human review.
+    Becomes an active memory immediately; only entries matching a suspicious
+    injection pattern are held back for manual review.
     """
     try:
         identity = _require_identity("write")
@@ -199,7 +207,12 @@ async def remember_this(content: str, tags: list[str] | None = None, salience: f
 
 @mcp.tool()
 async def recall(query: str, k: int = 5) -> str:
-    """Search through past conversation notes by meaning."""
+    """Search your memories by meaning (semantic search).
+
+    Call whenever the conversation references a specific person, place, event,
+    preference, or past topic, or before answering anything that depends on
+    what you and this user have shared. query: what to look for; k: max results.
+    """
     try:
         identity = _require_identity()
     except ValueError as e:
@@ -223,7 +236,10 @@ async def recall(query: str, k: int = 5) -> str:
 
 @mcp.tool()
 async def recall_recent(days: int = 7) -> str:
-    """Get recent conversation notes (chronological)."""
+    """List your most recent memories in chronological order (no search).
+
+    Use recall(query) instead when you need memories about a specific topic.
+    """
     try:
         identity = _require_identity()
     except ValueError as e:

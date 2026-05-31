@@ -138,6 +138,24 @@ Categories: `relationship_depth`, `topic_stance`, `behavioral_refinement`, `shar
 | `property get --soul SLUG --type TYPE` | Get a single property's value |
 | `property remove --soul SLUG --type TYPE` | Soft-delete a property |
 
+## Web UI (Admin)
+
+Source: `src/soulservice/web/` (FastAPI + HTMX + Jinja2). A localhost-only admin interface for reviewing proposals, browsing/searching memories, editing Self Cores, managing facts/properties/API tokens, and viewing the audit log.
+
+**Authentication — magic link.** Admins request a one-time login link by email (captured locally by Mailpit in dev). Tokens are 256-bit, stored only as a SHA-256 hash, single-use, and short-lived. The link opens a confirmation page and is consumed by an explicit `POST` (so email prefetchers cannot burn it). `/login` is rate-limited per client IP + email, and `WEB_SESSION_SECRET` is mandatory (the app refuses to start without it).
+
+**Authorization — RBAC.** Roles are configured via `WEB_ADMIN_EMAILS` as `email:role` (a bare email defaults to `admin`):
+
+| Role | Read pages | Edit memories/facts/properties/self-core | Create/revoke tokens |
+|---|:---:|:---:|:---:|
+| `viewer` | yes | no | no |
+| `editor` | yes | yes | no |
+| `admin` | yes | yes | yes |
+
+Enforcement is server-side (a `require_role` dependency) and mirrored in the templates.
+
+**Data access.** Like the MCP runtime, the Web UI runs under the restricted `soulservice_app` role: per-soul work goes through `get_scoped_session(tenant_id, soul_id)` (RLS enforced), and the scoped session owns the transaction. It does **not** use the DB owner. Cross-soul/non-RLS reads (soul list, audit, tokens) use the app role directly. Every write is recorded in the audit log.
+
 ## Data Model
 
 Source: `src/soulservice/models/`. Schema is managed by **Alembic** (`alembic upgrade head`); `infra/init.sql` only bootstraps extensions and roles.
@@ -213,13 +231,15 @@ Return result to client
 
 `health()` bypasses authentication entirely. All other tools require a valid Bearer token with the appropriate scope.
 
+The admin Web UI follows the same data path: after magic-link auth and an RBAC role check, per-soul requests open `get_scoped_session(tenant_id, soul_id)` so RLS is enforced there too (it is no longer an RLS-bypassing owner path).
+
 ## Roadmap Status
 
 | Phase | Status |
 |---|---|
 | **Phase 1** — MCP server, Self Core, Adaptation Layer, CLI, chat, security baseline | Done |
 | **Phase 2** — Embeddings, `recall()`, `remember_this()`, proposals, review workflow | Done |
-| **Phase 3** — Facts, properties, Web UI (FastAPI + HTMX) | Facts & properties done; Web UI in progress |
+| **Phase 3** — Facts, properties, Web UI (FastAPI + HTMX) | Done |
 | **Phase 4** — Dream Phase + self-reflection | Planned |
 | **Phase 5** — OAuth, key rotation, local embeddings | Planned |
 | **Phase 5.5** — Emergent Self (narrative self-image) | Planned |

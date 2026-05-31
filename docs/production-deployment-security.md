@@ -92,6 +92,10 @@ passwords are hardcoded placeholders in [infra/init.sql](../infra/init.sql).
 **Acceptance:** The runtime connection is a non-superuser, non-owner role; passwords
 come from the secrets manager; Postgres is not reachable from untrusted networks.
 
+Note: both the MCP runtime **and** the admin Web UI now connect as `soulservice_app`
+(subject to RLS). No application path requires the owner role anymore; reserve the
+owner/admin role strictly for migrations and break-glass tasks.
+
 ---
 
 ## 4. DEK cache exposure
@@ -165,6 +169,31 @@ place. Code review must keep secrets out of logs.
 
 ---
 
+## 8. Admin Web UI exposure
+
+**Risk:** The admin Web UI can read/write every Soul's data. It is designed for
+localhost-only use; exposing it without hardening would be a high-value target.
+
+**Current state:** Magic-link auth (256-bit one-time, hashed-at-rest, POST-confirm),
+mandatory `WEB_SESSION_SECRET` (fail-closed), per-IP+email login throttle, RBAC
+(viewer/editor/admin), and RLS-scoped data access via `soulservice_app`. Cookies
+are `SameSite=lax`; `WEB_SECURE_COOKIES` defaults to `false` for localhost/http.
+
+**Required action:**
+- Terminate TLS in front of the Web UI and set `WEB_SECURE_COOKIES=true`.
+- Keep the UI bound to loopback / behind a VPN or authenticating reverse proxy;
+  do not expose it on a public interface.
+- Set a strong, secrets-manager-sourced `WEB_SESSION_SECRET`.
+- Use real `WEB_ADMIN_EMAILS` with least-privilege roles (prefer `viewer`/`editor`
+  over `admin`); restrict token-creation rights to a minimal set of admins.
+- When running multiple Web UI instances, back the login throttle with a shared
+  store (see section 5) — the in-memory throttle is per-process.
+
+**Acceptance:** Web UI reachable only over TLS from trusted networks; secure cookies
+on; session secret from the secrets manager; admins scoped to least privilege.
+
+---
+
 ## Pre-production checklist
 
 - [ ] TLS terminates in front of the MCP server; app port not publicly reachable
@@ -173,6 +202,7 @@ place. Code review must keep secrets out of logs.
 - [ ] Runtime DB role is non-superuser, non-owner; real passwords from secrets manager
 - [ ] Postgres reachable only from app/migrate hosts
 - [ ] Core dumps disabled/protected; DEK cache TTL set deliberately
-- [ ] Shared-store rate limiting if running multiple instances
+- [ ] Shared-store rate limiting (incl. Web UI login throttle) if running multiple instances
 - [ ] Backups encrypted, key stored separately, restore tested
 - [ ] No secrets in logs; log access restricted
+- [ ] Admin Web UI: TLS + `WEB_SECURE_COOKIES=true`, not publicly exposed, strong `WEB_SESSION_SECRET`, least-privilege `WEB_ADMIN_EMAILS` roles

@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}Export/Import – {{ soul.display_name }}{% endblock %}
+{% block content %}
+<h1>Export/Import – {{ soul.display_name }}</h1>
+
+<div class="notice">
+  <strong>Warning:</strong> Export files contain <em>decrypted personal data</em>.
+  Store and transfer them securely. Never commit exports to version control.
+</div>
+
+{% if flash %}
+<div class="notice">
+  <strong>Import complete</strong>
+  {% if flash.created_new %} (new soul){% else %} (merged){% endif %}:
+  <ul>
+    <li>Soul ID: {{ flash.soul_id }}</li>
+    <li>Self core: {{ flash.self_core }}</li>
+    <li>Memories: {{ flash.memories }}</li>
+    <li>Facts: {{ flash.facts }}</li>
+    <li>Properties: {{ flash.properties }}</li>
+    {% if flash.skipped_properties %}
+    <li>Skipped properties: {{ flash.skipped_properties }}</li>
+    {% endif %}
+    <li>Adaptations: {{ flash.adaptations }}</li>
+  </ul>
+</div>
+{% endif %}
+
+{% if can_admin %}
+<section>
+  <h2>Export</h2>
+  <form method="post" action="/souls/{{ soul.slug }}/export">
+    <label><input type="checkbox" name="include_audit" value="true"> Include audit log</label>
+    <label><input type="checkbox" name="all_statuses" value="true"> All memory/fact/adaptation statuses</label>
+    <button type="submit">Download export</button>
+  </form>
+</section>
+
+<section>
+  <h2>Import</h2>
+  <form method="post" action="/souls/{{ soul.slug }}/import" enctype="multipart/form-data">
+    <p>
+      <label>Export ZIP file<br>
+        <input type="file" name="file" accept=".zip,application/zip" required>
+      </label>
+    </p>
+    <fieldset>
+      <legend>Target</legend>
+      <label>
+        <input type="radio" name="mode" value="merge" checked>
+        Merge into this soul ({{ soul.slug }})
+      </label>
+      <label>
+        <input type="radio" name="mode" value="new">
+        Create new soul
+      </label>
+    </fieldset>
+    <p>
+      <label>Owner user (for new soul)<br>
+        <select name="owner_user_id">
+          <option value="">— select —</option>
+          {% for u in users %}
+          <option value="{{ u.id }}">{{ u.display_name }} ({{ u.email }})</option>
+          {% endfor %}
+        </select>
+      </label>
+    </p>
+    <p>
+      <label>New slug<br><input name="new_slug" placeholder="e.g. george-copy"></label>
+    </p>
+    <p>
+      <label>Display name<br><input name="display_name" placeholder="Display name"></label>
+    </p>
+    <p>
+      <label>On conflict (facts/properties)<br>
+        <select name="on_conflict">
+          {% for m in conflict_modes %}
+          <option value="{{ m }}">{{ m }}</option>
+          {% endfor %}
+        </select>
+      </label>
+    </p>
+    <label><input type="checkbox" name="recompute_embeddings" value="true"> Recompute embeddings (Mistral)</label>
+    <p><button type="submit">Import</button></p>
+  </form>
+</section>
+{% else %}
+<p class="notice">Export and import require the admin role.</p>
+{% endif %}
+{% endblock %}

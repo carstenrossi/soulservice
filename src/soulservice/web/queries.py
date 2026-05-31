@@ -56,6 +56,15 @@ async def list_souls(session: AsyncSession) -> list[dict]:
     return [dict(r) for r in rows.mappings().all()]
 
 
+async def list_users(session: AsyncSession) -> list[dict]:
+    rows = await session.execute(
+        text(
+            "SELECT id, email, display_name, tenant_id FROM users ORDER BY display_name"
+        )
+    )
+    return [dict(r) for r in rows.mappings().all()]
+
+
 async def resolve_soul(session: AsyncSession, slug: str) -> dict:
     row = await session.execute(
         text(

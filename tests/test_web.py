@@ -504,3 +504,176 @@ class TestSelfCoreConcurrency:
             )
         assert response.status_code == 200
         assert "modified" in response.text.lower()
+
+
+def _minimal_export_zip() -> bytes:
+    import io
+    import json
+    import zipfile
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr(
+            "manifest.json",
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "source": {"slug": "george", "display_name": "George"},
+                    "self_core": {"content": None, "history": []},
+                    "facts": [],
+                    "properties": [],
+                    "adaptations": [],
+                }
+            ),
+        )
+        zf.writestr("memories.ndjson", "")
+    return buf.getvalue()
+
+
+class TestPortabilityRoutes:
+    pytestmark = pytest.mark.asyncio
+
+    async def test_viewer_cannot_export(self, client):
+        await _login_as(client, "viewer@test.dev")
+        response = await client.post(
+            "/souls/george/export",
+            data={},
+            follow_redirects=False,
+        )
+        assert response.status_code == 403
+
+    async def test_editor_cannot_export(self, client):
+        await _login_as(client, "editor@test.dev")
+        response = await client.post(
+            "/souls/george/export",
+            data={},
+            follow_redirects=False,
+        )
+        assert response.status_code == 403
+
+    async def test_admin_can_export(self, client):
+        await _login_as(client, "admin@test.dev")
+        fake_manifest = {"schema_version": 1, "source": {}, "self_core": {}}
+        with (
+            patch(
+                "soulservice.web.routes.portability.soul_context",
+                _fake_soul_context(),
+            ),
+            patch(
+                "soulservice.web.routes.portability.portability.export_soul",
+                new=AsyncMock(return_value=(fake_manifest, [])),
+            ),
+        ):
+            response = await client.post(
+                "/souls/george/export",
+                data={},
+                follow_redirects=False,
+            )
+        assert response.status_code == 200
+        assert "application/zip" in response.headers.get("content-type", "")
+        assert "george-export.zip" in response.headers.get("content-disposition", "")
+
+    async def test_viewer_cannot_import(self, client):
+        await _login_as(client, "viewer@test.dev")
+        response = await client.post(
+            "/souls/george/import",
+            files={"file": ("export.zip", _minimal_export_zip(), "application/zip")},
+            data={"mode": "merge"},
+            follow_redirects=False,
+        )
+        assert response.status_code == 403
+
+    async def test_editor_cannot_import(self, client):
+        await _login_as(client, "editor@test.dev")
+        response = await client.post(
+            "/souls/george/import",
+            files={"file": ("export.zip", _minimal_export_zip(), "application/zip")},
+            data={"mode": "merge"},
+            follow_redirects=False,
+        )
+        assert response.status_code == 403
+
+    async def test_admin_import_merge_calls_import_soul(self, client):
+        await _login_as(client, "admin@test.dev")
+        stats = {
+            "soul_id": "00000000-0000-0000-0000-000000000099",
+            "created_new": False,
+            "self_core": 1,
+            "memories": 2,
+            "facts": 0,
+            "properties": 0,
+            "adaptations": 0,
+            "skipped_properties": 0,
+        }
+
+        @asynccontextmanager
+        async def _fake_get_session():
+            yield AsyncMock()
+
+        with (
+            patch(
+                "soulservice.web.routes.portability.get_session",
+                _fake_get_session,
+            ),
+            patch(
+                "soulservice.web.routes.portability.portability.import_soul",
+                new=AsyncMock(return_value=stats),
+            ) as mock_import,
+        ):
+            response = await client.post(
+                "/souls/george/import",
+                files={"file": ("export.zip", _minimal_export_zip(), "application/zip")},
+                data={"mode": "merge", "on_conflict": "overwrite"},
+                follow_redirects=False,
+            )
+        assert response.status_code == 303
+        assert response.headers["location"] == "/souls/george/portability"
+        mock_import.assert_awaited_once()
+        assert mock_import.call_args.kwargs["into_slug"] == "george"
+        assert mock_import.call_args.kwargs["owner_user_id"] is None
+
+    async def test_admin_import_new_calls_import_soul(self, client):
+        await _login_as(client, "admin@test.dev")
+        owner_id = "00000000-0000-0000-0000-000000000003"
+        stats = {
+            "soul_id": "00000000-0000-0000-0000-000000000099",
+            "created_new": True,
+            "self_core": 1,
+            "memories": 0,
+            "facts": 0,
+            "properties": 0,
+            "adaptations": 0,
+            "skipped_properties": 0,
+        }
+
+        @asynccontextmanager
+        async def _fake_get_session():
+            yield AsyncMock()
+
+        with (
+            patch(
+                "soulservice.web.routes.portability.get_session",
+                _fake_get_session,
+            ),
+            patch(
+                "soulservice.web.routes.portability.portability.import_soul",
+                new=AsyncMock(return_value=stats),
+            ) as mock_import,
+        ):
+            response = await client.post(
+                "/souls/george/import",
+                files={"file": ("export.zip", _minimal_export_zip(), "application/zip")},
+                data={
+                    "mode": "new",
+                    "owner_user_id": owner_id,
+                    "new_slug": "george-copy",
+                    "on_conflict": "skip",
+                },
+                follow_redirects=False,
+            )
+        assert response.status_code == 303
+        assert response.headers["location"] == "/souls/george-copy/portability"
+        mock_import.assert_awaited_once()
+        assert mock_import.call_args.kwargs["into_slug"] is None
+        assert mock_import.call_args.kwargs["owner_user_id"] == owner_id
+        assert mock_import.call_args.kwargs["new_slug"] == "george-copy"

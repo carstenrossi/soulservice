@@ -56,6 +56,7 @@ def create_app() -> FastAPI:
         dashboard,
         facts,
         memories,
+        portability,
         properties,
         proposals,
         self_core,
@@ -72,6 +73,7 @@ def create_app() -> FastAPI:
         self_core,
         tokens,
         audit,
+        portability,
     ):
         app.include_router(module.router)
     return app

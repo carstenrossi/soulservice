@@ -10,12 +10,15 @@ import json
 import os
 import subprocess
 import tempfile
+import zipfile
 from datetime import UTC, datetime, timedelta
+from uuid import UUID
 
 import click
 import yaml
 from sqlalchemy import text
 
+from soulservice.core import portability
 from soulservice.core.auth import VALID_MODES, generate_token
 from soulservice.core.crypto import (
     build_aad,
@@ -187,6 +190,132 @@ def soul_create(user_id: str, slug: str, display_name: str):
 
     sid = _run(_create())
     click.echo(f"Soul created: {sid}")
+
+
+@soul.command("export")
+@click.option("--soul", "soul_slug", required=True, help="Soul slug")
+@click.option("--out", "out_path", default=None, help="Output .zip path")
+@click.option("--include-audit", is_flag=True, default=False, help="Include audit log")
+@click.option(
+    "--all-statuses",
+    is_flag=True,
+    default=False,
+    help="Include all memory/fact/adaptation statuses",
+)
+def soul_export(soul_slug: str, out_path: str | None, include_audit: bool, all_statuses: bool):
+    """Export a complete soul to a portable ZIP bundle (decrypted plaintext)."""
+
+    async def _export():
+        async with async_session_factory() as session:
+            return await portability.export_soul(
+                session,
+                soul_slug,
+                include_audit=include_audit,
+                all_statuses=all_statuses,
+            )
+
+    try:
+        manifest, memories = _run(_export())
+    except ValueError as e:
+        click.echo(f"Error: {e}", err=True)
+        raise SystemExit(1) from e
+
+    out = out_path or f"{soul_slug}-export.zip"
+    with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr(
+            "manifest.json",
+            json.dumps(manifest, ensure_ascii=False, indent=2),
+        )
+        ndjson = "".join(
+            portability.memory_to_ndjson_line(m) + "\n" for m in memories
+        )
+        zf.writestr("memories.ndjson", ndjson)
+
+    click.echo(
+        f"Exported soul '{soul_slug}' to {out}. "
+        "WARNING: contains DECRYPTED personal data — store securely."
+    )
+
+
+@soul.command("import")
+@click.argument("file", type=click.Path(exists=True))
+@click.option("--into", "into_slug", default=None, help="Merge into existing soul slug")
+@click.option("--user", "owner_user_id", default=None, help="Owner user UUID (new soul)")
+@click.option("--slug", "new_slug", default=None, help="Slug for new soul")
+@click.option("--display", "display_name", default=None, help="Display name for new soul")
+@click.option(
+    "--on-conflict",
+    type=click.Choice(["overwrite", "skip"], case_sensitive=False),
+    default="overwrite",
+    help="Conflict strategy for facts/properties",
+)
+@click.option(
+    "--recompute-embeddings",
+    is_flag=True,
+    default=False,
+    help="Recompute memory embeddings via Mistral instead of using export",
+)
+def soul_import(
+    file: str,
+    into_slug: str | None,
+    owner_user_id: str | None,
+    new_slug: str | None,
+    display_name: str | None,
+    on_conflict: str,
+    recompute_embeddings: bool,
+):
+    """Import a soul from a portable ZIP bundle."""
+    if bool(into_slug) == bool(owner_user_id):
+        click.echo(
+            "Error: provide exactly one of --into (merge) or --user (new soul).",
+            err=True,
+        )
+        raise SystemExit(1)
+
+    with zipfile.ZipFile(file) as zf:
+        manifest = json.loads(zf.read("manifest.json"))
+        try:
+            raw_ndjson = zf.read("memories.ndjson").decode("utf-8")
+            memories = [
+                portability.parse_ndjson_line(line)
+                for line in raw_ndjson.splitlines()
+                if line.strip()
+            ]
+        except KeyError:
+            memories = []
+
+    async def _import():
+        async with async_session_factory() as session:
+            stats = await portability.import_soul(
+                session,
+                manifest,
+                memories,
+                into_slug=into_slug,
+                owner_user_id=owner_user_id,
+                new_slug=new_slug,
+                display_name=display_name,
+                on_conflict=on_conflict,
+                recompute_embeddings=recompute_embeddings,
+            )
+            await session.commit()
+            return stats
+
+    try:
+        stats = _run(_import())
+    except ValueError as e:
+        click.echo(f"Error: {e}", err=True)
+        raise SystemExit(1) from e
+
+    dek_cache.invalidate(UUID(stats["soul_id"]))
+    action = "created" if stats["created_new"] else "merged into"
+    click.echo(f"Soul {action}: {stats['soul_id']}")
+    click.echo(f"  self_core:  {stats['self_core']}")
+    click.echo(f"  memories:   {stats['memories']}")
+    click.echo(f"  facts:      {stats['facts']}")
+    click.echo(f"  properties: {stats['properties']}")
+    if stats["skipped_properties"]:
+        click.echo(f"  skipped properties: {stats['skipped_properties']}")
+    click.echo(f"  adaptations: {stats['adaptations']}")
 
 
 # ── Self Core ────────────────────────────────────────────────────

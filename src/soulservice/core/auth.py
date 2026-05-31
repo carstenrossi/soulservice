@@ -43,6 +43,11 @@ def generate_token(env: str = "dev") -> tuple[str, str, str]:
     return full_token, prefix, token_hash
 
 
+def has_scope(identity: TokenIdentity, scope: str) -> bool:
+    """Whether the resolved token identity carries the given scope."""
+    return scope in identity.scopes
+
+
 def verify_token(token: str, token_hash: str) -> bool:
     """Verify a token against its stored Argon2id hash."""
     try:

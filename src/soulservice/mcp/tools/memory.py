@@ -9,7 +9,13 @@ from uuid import UUID
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from soulservice.core.crypto import decrypt_content, decrypt_dek, dek_cache, encrypt_content
+from soulservice.core.crypto import (
+    build_aad,
+    decrypt_content,
+    decrypt_dek,
+    dek_cache,
+    encrypt_content,
+)
 from soulservice.core.embeddings import embed_text
 from soulservice.core.injection import detect_injection_patterns
 
@@ -52,7 +58,7 @@ async def _get_dek(session: AsyncSession, soul_id: UUID) -> bytes:
     if result is None:
         msg = f"No DEK found for soul {soul_id}"
         raise ValueError(msg)
-    dek = decrypt_dek(bytes(result["dek_encrypted"]))
+    dek = decrypt_dek(bytes(result["dek_encrypted"]), build_aad(soul_id, "dek"))
     dek_cache.put(soul_id, dek)
     return dek
 
@@ -78,7 +84,7 @@ async def remember_this(
     injection_flags = detect_injection_patterns(content)
 
     dek = await _get_dek(session, soul_id)
-    ct, nonce = encrypt_content(content, dek)
+    ct, nonce = encrypt_content(content, dek, build_aad(soul_id, "memory"))
     embedding = await embed_text(content)
     embedding_str = "[" + ",".join(str(v) for v in embedding) + "]"
 
@@ -149,11 +155,13 @@ async def recall(
 
     parts = []
     memory_ids = []
+    aad = build_aad(soul_id, "memory")
     for row in results:
         plaintext = decrypt_content(
             bytes(row["content_encrypted"]),
             bytes(row["content_nonce"]),
             dek,
+            aad,
         )
         mem_id = str(row["id"])
         memory_ids.append(mem_id)
@@ -205,11 +213,13 @@ async def recall_recent(
         return "No recent memories found."
 
     parts = []
+    aad = build_aad(soul_id, "memory")
     for row in results:
         plaintext = decrypt_content(
             bytes(row["content_encrypted"]),
             bytes(row["content_nonce"]),
             dek,
+            aad,
         )
         mem_id = str(row["id"])
         created = row["created_at"].strftime("%Y-%m-%d")

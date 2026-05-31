@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import json
 import os
+from uuid import uuid4
 
 import pytest
 
+from soulservice.core.crypto import build_aad
 from soulservice.mcp.tools.properties import (
     PROPERTY_SCHEMAS,
     PROPERTY_TYPE_PATTERN,
@@ -125,8 +127,9 @@ class TestSerializeDeserialize:
 
     def test_sensitive_roundtrip(self):
         dek = os.urandom(32)
+        aad = build_aad(uuid4(), "property")
         value = {"avoid_topics": ["politics"], "notes": "private"}
-        stored, ct, nonce = serialize_value(value, True, dek)
+        stored, ct, nonce = serialize_value(value, True, dek, aad)
         assert stored == {"_encrypted": True}
         assert ct is not None
         assert nonce is not None
@@ -137,11 +140,15 @@ class TestSerializeDeserialize:
             "value_encrypted": ct,
             "value_nonce": nonce,
         }
-        assert deserialize_value(row, dek) == value
+        assert deserialize_value(row, dek, aad) == value
 
     def test_sensitive_requires_dek_on_serialize(self):
         with pytest.raises(ValueError, match="DEK required"):
-            serialize_value({"notes": "x"}, True, None)
+            serialize_value({"notes": "x"}, True, None, build_aad(uuid4(), "property"))
+
+    def test_sensitive_requires_aad_on_serialize(self):
+        with pytest.raises(ValueError, match="AAD required"):
+            serialize_value({"notes": "x"}, True, os.urandom(32), None)
 
     def test_sensitive_requires_dek_on_deserialize(self):
         row = {
@@ -151,7 +158,7 @@ class TestSerializeDeserialize:
             "value_nonce": b"y",
         }
         with pytest.raises(ValueError, match="DEK required"):
-            deserialize_value(row, None)
+            deserialize_value(row, None, build_aad(uuid4(), "property"))
 
 
 class TestSchemaRegistry:

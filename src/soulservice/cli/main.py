@@ -20,6 +20,7 @@ from sqlalchemy import text
 
 from soulservice.core.auth import VALID_MODES, generate_token
 from soulservice.core.crypto import (
+    build_aad,
     decrypt_content,
     decrypt_dek,
     dek_cache,
@@ -170,7 +171,7 @@ def soul_create(user_id: str, slug: str, display_name: str):
 
             # Generate and store DEK
             dek = generate_dek()
-            dek_enc = encrypt_dek(dek)
+            dek_enc = encrypt_dek(dek, build_aad(soul_id, "dek"))
             await session.execute(
                 text(
                     "INSERT INTO soul_keys (soul_id, tenant_id, dek_encrypted) "
@@ -225,7 +226,7 @@ def self_core_edit(soul_slug: str):
                 click.echo("Error: no encryption key for this soul.", err=True)
                 raise SystemExit(1)
 
-            dek = decrypt_dek(bytes(dek_result["dek_encrypted"]))
+            dek = decrypt_dek(bytes(dek_result["dek_encrypted"]), build_aad(soul_id, "dek"))
 
             # Load current self core (may not exist yet)
             sc_row = await session.execute(
@@ -242,6 +243,7 @@ def self_core_edit(soul_slug: str):
                     bytes(sc_result["content_encrypted"]),
                     bytes(sc_result["content_nonce"]),
                     dek,
+                    build_aad(soul_id, "self_core"),
                 )
                 current_version = sc_result["current_version"]
             else:
@@ -277,7 +279,7 @@ def self_core_edit(soul_slug: str):
                 raise SystemExit(1) from e
 
             # Encrypt and store
-            ct, nonce = encrypt_content(new_yaml, dek)
+            ct, nonce = encrypt_content(new_yaml, dek, build_aad(soul_id, "self_core"))
             new_version = current_version + 1
 
             if current_version == 0:
@@ -367,9 +369,9 @@ def self_core_import(soul_slug: str, note: str, file):
                 {"sid": str(soul_id)},
             )
             dek_result = dek_row.mappings().first()
-            dek = decrypt_dek(bytes(dek_result["dek_encrypted"]))
+            dek = decrypt_dek(bytes(dek_result["dek_encrypted"]), build_aad(soul_id, "dek"))
 
-            ct, nonce = encrypt_content(new_yaml, dek)
+            ct, nonce = encrypt_content(new_yaml, dek, build_aad(soul_id, "self_core"))
 
             # Check if self core exists
             sc_row = await session.execute(
@@ -457,7 +459,7 @@ def self_core_export(soul_slug: str):
                 {"sid": str(soul_id)},
             )
             dek_result = dek_row.mappings().first()
-            dek = decrypt_dek(bytes(dek_result["dek_encrypted"]))
+            dek = decrypt_dek(bytes(dek_result["dek_encrypted"]), build_aad(soul_id, "dek"))
 
             sc_row = await session.execute(
                 text(
@@ -475,6 +477,7 @@ def self_core_export(soul_slug: str):
                 bytes(sc_result["content_encrypted"]),
                 bytes(sc_result["content_nonce"]),
                 dek,
+                build_aad(soul_id, "self_core"),
             )
             click.echo(plaintext, nl=False)
 
@@ -549,12 +552,28 @@ def token():
     type=click.Choice(VALID_MODES, case_sensitive=False),
     help="identity = LLM becomes the soul; messenger = LLM channels the soul",
 )
-def token_create(soul_slug: str, name: str, expires_in: str, env_name: str, token_mode: str):
+@click.option(
+    "--read-only",
+    "read_only",
+    is_flag=True,
+    default=False,
+    help="Grant only the 'read' scope (write tools will be rejected).",
+)
+def token_create(
+    soul_slug: str,
+    name: str,
+    expires_in: str,
+    env_name: str,
+    token_mode: str,
+    read_only: bool,
+):
     """Generate a new API token for a soul."""
     days = int(expires_in.rstrip("d"))
     if days > 365:
         click.echo("Error: max token lifetime is 365 days.", err=True)
         raise SystemExit(1)
+
+    scopes = ["read"] if read_only else ["read", "write"]
 
     async def _create():
         async with async_session_factory() as session:
@@ -576,8 +595,9 @@ def token_create(soul_slug: str, name: str, expires_in: str, env_name: str, toke
                 text(
                     "INSERT INTO api_tokens "
                     "(tenant_id, user_id, soul_id, token_hash, token_prefix, "
-                    "name, mode, expires_at) "
-                    "VALUES (:tid, :uid, :sid, :hash, :prefix, :name, :mode, :exp)"
+                    "name, scopes, mode, expires_at) "
+                    "VALUES (:tid, :uid, :sid, :hash, :prefix, :name, :scopes, "
+                    ":mode, :exp)"
                 ),
                 {
                     "tid": str(soul_row["tenant_id"]),
@@ -586,6 +606,7 @@ def token_create(soul_slug: str, name: str, expires_in: str, env_name: str, toke
                     "hash": token_hash,
                     "prefix": prefix,
                     "name": name,
+                    "scopes": scopes,
                     "mode": token_mode,
                     "exp": expires_at,
                 },
@@ -597,6 +618,7 @@ def token_create(soul_slug: str, name: str, expires_in: str, env_name: str, toke
     click.echo("Token created. Save it now – it will not be shown again.\n")
     click.echo(f"  Token:   {full_token}")
     click.echo(f"  Mode:    {token_mode}")
+    click.echo(f"  Scopes:  {', '.join(scopes)}")
     click.echo(f"  Expires: {expires_at.isoformat()}")
 
 
@@ -618,8 +640,8 @@ def token_list(soul_slug: str):
 
             tokens = await session.execute(
                 text(
-                    "SELECT id, token_prefix, name, mode, created_at, last_used_at, "
-                    "expires_at, revoked_at "
+                    "SELECT id, token_prefix, name, scopes, mode, created_at, "
+                    "last_used_at, expires_at, revoked_at "
                     "FROM api_tokens WHERE soul_id = :sid ORDER BY created_at DESC"
                 ),
                 {"sid": str(soul_row["id"])},
@@ -630,8 +652,10 @@ def token_list(soul_slug: str):
         status = "REVOKED" if t["revoked_at"] else "active"
         last_used = str(t["last_used_at"] or "never")
         mode = t.get("mode", "identity")
+        scopes = ",".join(t["scopes"]) if t["scopes"] else "-"
         click.echo(
-            f"  {t['token_prefix']}...  {t['name']:20s}  {mode:10s}  {status:8s}  "
+            f"  {t['token_prefix']}...  {t['name']:20s}  {mode:10s}  "
+            f"{scopes:12s}  {status:8s}  "
             f"expires={t['expires_at']}  last_used={last_used}"
         )
 
@@ -715,7 +739,7 @@ def init(self_core_file: str | None):
 
             # DEK
             dek = generate_dek()
-            dek_enc = encrypt_dek(dek)
+            dek_enc = encrypt_dek(dek, build_aad(soul_id, "dek"))
             await session.execute(
                 text(
                     "INSERT INTO soul_keys (soul_id, tenant_id, dek_encrypted) "
@@ -729,7 +753,7 @@ def init(self_core_file: str | None):
                 with open(self_core_file) as f:
                     yaml_content = f.read()
                 yaml.safe_load(yaml_content)  # validate
-                ct, nonce = encrypt_content(yaml_content, dek)
+                ct, nonce = encrypt_content(yaml_content, dek, build_aad(soul_id, "self_core"))
                 await session.execute(
                     text(
                         "INSERT INTO soul_self_cores "
@@ -801,8 +825,8 @@ def adaptation_add(soul_slug: str, category: str, confidence: float, source: str
                 click.echo("Error: no encryption key for this soul.", err=True)
                 raise SystemExit(1)
 
-            dek = decrypt_dek(bytes(dek_result["dek_encrypted"]))
-            ct, nonce = encrypt_content(content, dek)
+            dek = decrypt_dek(bytes(dek_result["dek_encrypted"]), build_aad(soul_id, "dek"))
+            ct, nonce = encrypt_content(content, dek, build_aad(soul_id, "adaptation"))
 
             result = await session.execute(
                 text(
@@ -853,7 +877,7 @@ def adaptation_list(soul_slug: str, filter_status: str):
                 {"sid": str(soul_id)},
             )
             dek_result = dek_row.mappings().first()
-            dek = decrypt_dek(bytes(dek_result["dek_encrypted"]))
+            dek = decrypt_dek(bytes(dek_result["dek_encrypted"]), build_aad(soul_id, "dek"))
 
             adaptations = await session.execute(
                 text(
@@ -870,6 +894,7 @@ def adaptation_list(soul_slug: str, filter_status: str):
                     bytes(a["content_encrypted"]),
                     bytes(a["content_nonce"]),
                     dek,
+                    build_aad(soul_id, "adaptation"),
                 )
                 results.append({**a, "content": plaintext})
             return results
@@ -913,8 +938,8 @@ def adaptation_supersede(adaptation_id: str, new_content: str, confidence: float
                 text("SELECT dek_encrypted FROM soul_keys WHERE soul_id = :sid"),
                 {"sid": str(soul_id)},
             )
-            dek = decrypt_dek(bytes(dek_row.mappings().first()["dek_encrypted"]))
-            ct, nonce = encrypt_content(new_content, dek)
+            dek = decrypt_dek(bytes(dek_row.mappings().first()["dek_encrypted"]), build_aad(soul_id, "dek"))
+            ct, nonce = encrypt_content(new_content, dek, build_aad(soul_id, "adaptation"))
 
             new = await session.execute(
                 text(
@@ -980,7 +1005,7 @@ def proposals_list(soul_slug: str, filter_status: str):
                 {"sid": str(soul_id)},
             )
             dek_result = dek_row.mappings().first()
-            dek = decrypt_dek(bytes(dek_result["dek_encrypted"]))
+            dek = decrypt_dek(bytes(dek_result["dek_encrypted"]), build_aad(soul_id, "dek"))
 
             rows = await session.execute(
                 text(
@@ -997,6 +1022,7 @@ def proposals_list(soul_slug: str, filter_status: str):
                     bytes(m["content_encrypted"]),
                     bytes(m["content_nonce"]),
                     dek,
+                    build_aad(soul_id, "memory"),
                 )
                 results.append({**m, "content": plaintext})
             return results
@@ -1092,7 +1118,7 @@ def memory_search(soul_slug: str, k: int, query: str):
                 text("SELECT dek_encrypted FROM soul_keys WHERE soul_id = :sid"),
                 {"sid": str(soul_id)},
             )
-            dek = decrypt_dek(bytes(dek_row.mappings().first()["dek_encrypted"]))
+            dek = decrypt_dek(bytes(dek_row.mappings().first()["dek_encrypted"]), build_aad(soul_id, "dek"))
 
             query_embedding = await embed_text(query)
             embedding_str = "[" + ",".join(str(v) for v in query_embedding) + "]"
@@ -1114,6 +1140,7 @@ def memory_search(soul_slug: str, k: int, query: str):
                     bytes(m["content_encrypted"]),
                     bytes(m["content_nonce"]),
                     dek,
+                    build_aad(soul_id, "memory"),
                 )
                 results.append({**m, "content": plaintext})
             return results
@@ -1159,7 +1186,7 @@ def memory_list_cmd(soul_slug: str, days: int, filter_status: str):
                 text("SELECT dek_encrypted FROM soul_keys WHERE soul_id = :sid"),
                 {"sid": str(soul_id)},
             )
-            dek = decrypt_dek(bytes(dek_row.mappings().first()["dek_encrypted"]))
+            dek = decrypt_dek(bytes(dek_row.mappings().first()["dek_encrypted"]), build_aad(soul_id, "dek"))
 
             cutoff = datetime.now(timezone.utc) - td(days=days)
             rows = await session.execute(
@@ -1178,6 +1205,7 @@ def memory_list_cmd(soul_slug: str, days: int, filter_status: str):
                     bytes(m["content_encrypted"]),
                     bytes(m["content_nonce"]),
                     dek,
+                    build_aad(soul_id, "memory"),
                 )
                 results.append({**m, "content": plaintext})
             return results
@@ -1280,8 +1308,8 @@ def fact_set(soul_slug: str, category: str, key: str, confidence: float, value: 
                 click.echo("Error: no encryption key for this soul.", err=True)
                 raise SystemExit(1)
 
-            dek = decrypt_dek(bytes(dek_result["dek_encrypted"]))
-            ct, nonce = encrypt_content(value, dek)
+            dek = decrypt_dek(bytes(dek_result["dek_encrypted"]), build_aad(soul_id, "dek"))
+            ct, nonce = encrypt_content(value, dek, build_aad(soul_id, "fact"))
 
             await session.execute(
                 text("""
@@ -1341,7 +1369,7 @@ def fact_list(soul_slug: str, category: str | None):
             if not dek_result:
                 click.echo("Error: no encryption key for this soul.", err=True)
                 raise SystemExit(1)
-            dek = decrypt_dek(bytes(dek_result["dek_encrypted"]))
+            dek = decrypt_dek(bytes(dek_result["dek_encrypted"]), build_aad(soul_id, "dek"))
 
             if category:
                 rows = await session.execute(
@@ -1370,6 +1398,7 @@ def fact_list(soul_slug: str, category: str | None):
                     bytes(f["value_encrypted"]),
                     bytes(f["value_nonce"]),
                     dek,
+                    build_aad(soul_id, "fact"),
                 )
                 results.append({**f, "value": plaintext})
             return results
@@ -1418,7 +1447,7 @@ def fact_get(soul_slug: str, category: str, key: str):
             if not dek_result:
                 click.echo("Error: no encryption key for this soul.", err=True)
                 raise SystemExit(1)
-            dek = decrypt_dek(bytes(dek_result["dek_encrypted"]))
+            dek = decrypt_dek(bytes(dek_result["dek_encrypted"]), build_aad(soul_id, "dek"))
 
             fact_row = await session.execute(
                 text(
@@ -1437,6 +1466,7 @@ def fact_get(soul_slug: str, category: str, key: str):
                 bytes(result["value_encrypted"]),
                 bytes(result["value_nonce"]),
                 dek,
+                build_aad(soul_id, "fact"),
             )
             return plaintext, result["confidence"], result["updated_at"]
 
@@ -1557,7 +1587,7 @@ def property_list(soul_slug: str, property_type: str | None):
             if not dek_result:
                 click.echo("Error: no encryption key for this soul.", err=True)
                 raise SystemExit(1)
-            dek = decrypt_dek(bytes(dek_result["dek_encrypted"]))
+            dek = decrypt_dek(bytes(dek_result["dek_encrypted"]), build_aad(soul_id, "dek"))
 
             if property_type:
                 rows = await session.execute(
@@ -1583,7 +1613,9 @@ def property_list(soul_slug: str, property_type: str | None):
             results = []
             for prop in rows.mappings().all():
                 value_dict = deserialize_value(
-                    prop, dek if prop["is_sensitive"] else None
+                    prop,
+                    dek if prop["is_sensitive"] else None,
+                    build_aad(soul_id, "property"),
                 )
                 results.append({**prop, "value_dict": value_dict})
             return results
@@ -1631,7 +1663,7 @@ def property_get(soul_slug: str, property_type: str):
             if not dek_result:
                 click.echo("Error: no encryption key for this soul.", err=True)
                 raise SystemExit(1)
-            dek = decrypt_dek(bytes(dek_result["dek_encrypted"]))
+            dek = decrypt_dek(bytes(dek_result["dek_encrypted"]), build_aad(soul_id, "dek"))
 
             prop_row = await session.execute(
                 text(
@@ -1648,7 +1680,9 @@ def property_get(soul_slug: str, property_type: str):
                 raise SystemExit(1)
 
             value_dict = deserialize_value(
-                result, dek if result["is_sensitive"] else None
+                result,
+                dek if result["is_sensitive"] else None,
+                build_aad(soul_id, "property"),
             )
             return value_dict, result["schema_version"], result["updated_at"]
 

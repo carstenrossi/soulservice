@@ -8,7 +8,7 @@ from uuid import UUID
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from soulservice.core.crypto import decrypt_content, decrypt_dek, dek_cache
+from soulservice.core.crypto import build_aad, decrypt_content, decrypt_dek, dek_cache
 
 MESSENGER_SELF_CORE_PREFIX = """\
 Below is the personality profile of a Soul named {soul_name}.
@@ -41,7 +41,7 @@ async def _get_dek(session: AsyncSession, soul_id: UUID) -> bytes:
         msg = f"No DEK found for soul {soul_id}"
         raise ValueError(msg)
 
-    dek = decrypt_dek(bytes(result["dek_encrypted"]))
+    dek = decrypt_dek(bytes(result["dek_encrypted"]), build_aad(soul_id, "dek"))
     dek_cache.put(soul_id, dek)
     return dek
 
@@ -77,6 +77,7 @@ async def get_self_core(
         bytes(result["content_encrypted"]),
         bytes(result["content_nonce"]),
         dek,
+        build_aad(soul_id, "self_core"),
     )
 
     adaptations = await _get_active_adaptations(session, soul_id, dek)
@@ -141,11 +142,13 @@ async def _get_active_adaptations(
         {"sid": str(soul_id)},
     )
     results = []
+    aad = build_aad(soul_id, "adaptation")
     for row in rows.mappings().all():
         plaintext = decrypt_content(
             bytes(row["content_encrypted"]),
             bytes(row["content_nonce"]),
             dek,
+            aad,
         )
         results.append({
             "category": row["category"],

@@ -15,6 +15,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from soulservice.core.crypto import (
+    build_aad,
     decrypt_content,
     decrypt_dek,
     dek_cache,
@@ -81,26 +82,38 @@ def _validate_value(property_type: str, value: dict) -> None:
 
 
 def serialize_value(
-    value: dict, is_sensitive: bool, dek: bytes | None
+    value: dict, is_sensitive: bool, dek: bytes | None, aad: bytes | None = None
 ) -> tuple[dict, bytes | None, bytes | None]:
-    """Return (jsonb_to_store, value_encrypted, value_nonce)."""
+    """Return (jsonb_to_store, value_encrypted, value_nonce).
+
+    ``aad`` is required when ``is_sensitive`` is True.
+    """
     if is_sensitive:
         if dek is None:
             msg = "DEK required for sensitive property."
             raise ValueError(msg)
-        ct, nonce = encrypt_content(json.dumps(value), dek)
+        if aad is None:
+            msg = "AAD required for sensitive property."
+            raise ValueError(msg)
+        ct, nonce = encrypt_content(json.dumps(value), dek, aad)
         return {"_encrypted": True}, ct, nonce
     return value, None, None
 
 
-def deserialize_value(row, dek: bytes | None) -> dict:
-    """Return the plaintext dict for a property row."""
+def deserialize_value(row, dek: bytes | None, aad: bytes | None = None) -> dict:
+    """Return the plaintext dict for a property row.
+
+    ``aad`` is required when the row is sensitive (encrypted).
+    """
     if row["is_sensitive"]:
         if dek is None:
             msg = "DEK required to decrypt sensitive property."
             raise ValueError(msg)
+        if aad is None:
+            msg = "AAD required to decrypt sensitive property."
+            raise ValueError(msg)
         plaintext = decrypt_content(
-            bytes(row["value_encrypted"]), bytes(row["value_nonce"]), dek
+            bytes(row["value_encrypted"]), bytes(row["value_nonce"]), dek, aad
         )
         return json.loads(plaintext)
     raw = row["value"]
@@ -120,7 +133,7 @@ async def _get_dek(session: AsyncSession, soul_id: UUID) -> bytes:
     if result is None:
         msg = f"No DEK found for soul {soul_id}"
         raise ValueError(msg)
-    dek = decrypt_dek(bytes(result["dek_encrypted"]))
+    dek = decrypt_dek(bytes(result["dek_encrypted"]), build_aad(soul_id, "dek"))
     dek_cache.put(soul_id, dek)
     return dek
 
@@ -146,7 +159,9 @@ async def set_property(
     schema = PROPERTY_SCHEMAS[property_type]
     is_sensitive = schema["sensitive"]
     dek = await _get_dek(session, soul_id) if is_sensitive else None
-    stored_value, ct, nonce = serialize_value(value, is_sensitive, dek)
+    stored_value, ct, nonce = serialize_value(
+        value, is_sensitive, dek, build_aad(soul_id, "property")
+    )
 
     await session.execute(
         text("""
@@ -205,11 +220,12 @@ async def get_properties(
         return f"No properties found{filter_msg}."
 
     dek: bytes | None = None
+    aad = build_aad(soul_id, "property")
     parts = []
     for row in results:
         if row["is_sensitive"] and dek is None:
             dek = await _get_dek(session, soul_id)
-        value_dict = deserialize_value(row, dek)
+        value_dict = deserialize_value(row, dek, aad)
         updated = row["updated_at"].strftime("%Y-%m-%d")
         header = (
             f"[{row['property_type']}, v{row['schema_version']}, updated={updated}]"

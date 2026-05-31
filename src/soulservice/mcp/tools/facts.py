@@ -8,7 +8,13 @@ from uuid import UUID
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from soulservice.core.crypto import decrypt_content, decrypt_dek, dek_cache, encrypt_content
+from soulservice.core.crypto import (
+    build_aad,
+    decrypt_content,
+    decrypt_dek,
+    dek_cache,
+    encrypt_content,
+)
 
 VALUE_MAX_LEN = 4096
 IDENTIFIER_PATTERN = re.compile(r"^[a-z][a-z0-9_-]{0,49}$")
@@ -43,7 +49,7 @@ async def _get_dek(session: AsyncSession, soul_id: UUID) -> bytes:
     if result is None:
         msg = f"No DEK found for soul {soul_id}"
         raise ValueError(msg)
-    dek = decrypt_dek(bytes(result["dek_encrypted"]))
+    dek = decrypt_dek(bytes(result["dek_encrypted"]), build_aad(soul_id, "dek"))
     dek_cache.put(soul_id, dek)
     return dek
 
@@ -72,7 +78,7 @@ async def learn_fact(
         return "Error: confidence must be between 0.0 and 1.0."
 
     dek = await _get_dek(session, soul_id)
-    ct, nonce = encrypt_content(value, dek)
+    ct, nonce = encrypt_content(value, dek, build_aad(soul_id, "fact"))
 
     await session.execute(
         text("""
@@ -142,11 +148,13 @@ async def get_facts(
         return f"No facts found{filter_msg}."
 
     parts = []
+    aad = build_aad(soul_id, "fact")
     for row in results:
         plaintext = decrypt_content(
             bytes(row["value_encrypted"]),
             bytes(row["value_nonce"]),
             dek,
+            aad,
         )
         fact_id = str(row["id"])
         updated = row["updated_at"].strftime("%Y-%m-%d")

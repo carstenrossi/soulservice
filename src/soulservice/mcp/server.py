@@ -13,7 +13,7 @@ from mcp.server.fastmcp import FastMCP
 from soulservice.core.config import settings
 from soulservice.core.db import app_session_factory, get_scoped_session
 from soulservice.core.audit import log_tool_call
-from soulservice.core.auth import TokenIdentity
+from soulservice.core.auth import TokenIdentity, has_scope
 from soulservice.core.ratelimit import rate_limiter
 from soulservice.mcp.middleware import resolve_bearer_token
 from soulservice.mcp.tools.identity import get_self_core, get_relationship_overview
@@ -76,10 +76,13 @@ class BearerAuthASGIMiddleware:
         await self.app(scope, receive, send)
 
 
-def _require_identity() -> TokenIdentity:
+def _require_identity(required_scope: str = "read") -> TokenIdentity:
     identity = current_identity.get()
     if identity is None:
         msg = "Not authenticated. Provide a valid Bearer token."
+        raise ValueError(msg)
+    if not has_scope(identity, required_scope):
+        msg = f"Token lacks required scope '{required_scope}'."
         raise ValueError(msg)
     allowed, retry = rate_limiter.check(identity.token_id)
     if not allowed:
@@ -151,7 +154,7 @@ async def whats_our_history() -> str:
 async def remember_this(content: str, tags: list[str] | None = None, salience: float = 0.5) -> str:
     """Note something from the conversation worth keeping. Stored as pending proposal for human review."""
     try:
-        identity = _require_identity()
+        identity = _require_identity("write")
     except ValueError as e:
         return f"Error: {e}"
 
@@ -256,7 +259,7 @@ async def list_proposals(status: str = "pending") -> str:
 async def decide(proposal_id: str, action: str, note: str | None = None) -> str:
     """Approve or reject a conversation note. action: 'confirm' or 'reject'."""
     try:
-        identity = _require_identity()
+        identity = _require_identity("write")
     except ValueError as e:
         return f"Error: {e}"
 
@@ -282,7 +285,7 @@ async def decide(proposal_id: str, action: str, note: str | None = None) -> str:
 async def learn_fact(category: str, key: str, value: str, confidence: float = 1.0) -> str:
     """Store or update a structured fact (e.g. user preferences, known context)."""
     try:
-        identity = _require_identity()
+        identity = _require_identity("write")
     except ValueError as e:
         return f"Error: {e}"
 
@@ -342,7 +345,7 @@ async def get_facts(category: str | None = None) -> str:
 async def forget_fact(category: str, key: str) -> str:
     """Remove a stored fact that is no longer accurate."""
     try:
-        identity = _require_identity()
+        identity = _require_identity("write")
     except ValueError as e:
         return f"Error: {e}"
 
@@ -371,7 +374,7 @@ async def forget_fact(category: str, key: str) -> str:
 async def set_property(property_type: str, value: dict) -> str:
     """Store or update a typed property (e.g. communication_style, boundaries)."""
     try:
-        identity = _require_identity()
+        identity = _require_identity("write")
     except ValueError as e:
         return f"Error: {e}"
 
@@ -429,7 +432,7 @@ async def get_properties(property_type: str | None = None) -> str:
 async def delete_property(property_type: str) -> str:
     """Soft-delete a property that no longer applies."""
     try:
-        identity = _require_identity()
+        identity = _require_identity("write")
     except ValueError as e:
         return f"Error: {e}"
 

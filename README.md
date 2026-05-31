@@ -125,6 +125,11 @@ export DATABASE_URL SOULSERVICE_MASTER_KEY ANTHROPIC_API_KEY CHAT_MCP_TOKEN
 uv run soulservice-chat
 ```
 
+## Documentation
+
+- [Functional Overview](docs/functional-overview.md) — concepts, MCP tools, CLI, data model, encryption & security model, request flow.
+- [Production Deployment Security Essentials](docs/production-deployment-security.md) — TLS, key management, DB credentials, backups, and other hardening for production.
+
 ## Project Structure
 
 ```
@@ -191,7 +196,8 @@ soulctl self-core export --soul mysoul    # Export as YAML
 soulctl self-core import --soul mysoul < soul.yaml
 soulctl token create --soul mysoul --name cursor --mode identity --expires-in 90d
 soulctl token create --soul mysoul --name desktop --mode messenger
-soulctl token list --soul mysoul
+soulctl token create --soul mysoul --name readonly --read-only   # read scope only
+soulctl token list --soul mysoul                                  # shows scopes column
 soulctl token revoke <token-id>
 soulctl adaptation add --soul mysoul --category topic_stance "Simple beats clever."
 soulctl adaptation add --soul mysoul --category shared_reference "The night we built the memory pipeline."
@@ -215,11 +221,13 @@ soulctl health                            # Check DB connectivity
 ## Security
 
 - **At-rest encryption:** All memory content, facts, proposals, and Self Cores are AES-256-GCM encrypted with per-soul keys (envelope encryption).
+- **Context-bound ciphertext (AAD):** Every encryption binds AES-GCM Associated Data to `soul_id` + a domain label (`memory`, `fact`, `property`, `self_core`, `adaptation`, `dek`). Ciphertext cannot be replayed across souls or between record types — decryption fails closed if the context doesn't match.
 - **Row Level Security:** Postgres RLS on all sensitive tables, scoped per tenant + soul per request.
 - **Token auth:** Argon2id hashing (OWASP 2026 recommendation), mandatory expiry, per-client tokens.
+- **Scope enforcement:** Tokens carry `read`/`write` scopes. Write tools (`remember_this`, `decide`, `learn_fact`, `forget_fact`, `set_property`, `delete_property`) require the `write` scope; read tools require `read`. Create read-only tokens with `--read-only`.
 - **Audit log:** Append-only, every tool invocation recorded with args hash (never plaintext).
 - **Prompt injection hardening:** Retrieved content wrapped in `<retrieved_memory untrusted="true">`, `<retrieved_fact untrusted="true">`, and `<retrieved_property untrusted="true">` tags, injection patterns flagged.
-- **Restricted DB user:** App user has no `BYPASSRLS`, no `DELETE` on audit log.
+- **Restricted DB user:** App runtime uses a dedicated `soulservice_app` role (no `BYPASSRLS`, RLS forced) separate from the owner/migration role; no `DELETE` on the audit log.
 
 ## Roadmap
 

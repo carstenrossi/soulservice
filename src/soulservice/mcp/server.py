@@ -26,6 +26,11 @@ from soulservice.mcp.tools.review import (
     decide_proposal as review_decide,
     list_proposals as review_list_proposals,
 )
+from soulservice.mcp.tools.facts import (
+    forget_fact as facts_forget,
+    get_facts as facts_get,
+    learn_fact as facts_learn,
+)
 from soulservice.mcp.tools.meta import health_check, whoami_info
 
 logger = logging.getLogger("soulservice.mcp")

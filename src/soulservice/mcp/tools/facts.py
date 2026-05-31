@@ -11,8 +11,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from soulservice.core.crypto import decrypt_content, decrypt_dek, dek_cache, encrypt_content
 
 VALUE_MAX_LEN = 4096
-CATEGORY_MAX_LEN = 50
-KEY_MAX_LEN = 50
 IDENTIFIER_PATTERN = re.compile(r"^[a-z][a-z0-9_-]{0,49}$")
 
 

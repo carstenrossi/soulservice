@@ -1331,7 +1331,11 @@ def fact_list(soul_slug: str, category: str | None):
                 text("SELECT dek_encrypted FROM soul_keys WHERE soul_id = :sid"),
                 {"sid": str(soul_id)},
             )
-            dek = decrypt_dek(bytes(dek_row.mappings().first()["dek_encrypted"]))
+            dek_result = dek_row.mappings().first()
+            if not dek_result:
+                click.echo("Error: no encryption key for this soul.", err=True)
+                raise SystemExit(1)
+            dek = decrypt_dek(bytes(dek_result["dek_encrypted"]))
 
             if category:
                 rows = await session.execute(
@@ -1404,7 +1408,11 @@ def fact_get(soul_slug: str, category: str, key: str):
                 text("SELECT dek_encrypted FROM soul_keys WHERE soul_id = :sid"),
                 {"sid": str(soul_id)},
             )
-            dek = decrypt_dek(bytes(dek_row.mappings().first()["dek_encrypted"]))
+            dek_result = dek_row.mappings().first()
+            if not dek_result:
+                click.echo("Error: no encryption key for this soul.", err=True)
+                raise SystemExit(1)
+            dek = decrypt_dek(bytes(dek_result["dek_encrypted"]))
 
             fact_row = await session.execute(
                 text(

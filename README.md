@@ -151,6 +151,20 @@ export DATABASE_URL SOULSERVICE_MASTER_KEY WEB_SESSION_SECRET WEB_ADMIN_EMAILS
 uv run python -m soulservice.web
 ```
 
+### Rebuild & restart the whole stack
+
+After code changes (or for a fresh start), `restart.sh` stops any running
+instances, rebuilds the images, applies migrations, and brings the full stack
+back up (Postgres, MCP server on `6001`, Web UI on `6002`, Mailpit):
+
+```bash
+./restart.sh             # rebuild + restart; Postgres data is preserved
+./restart.sh --reset-db  # also drop the Postgres volume (DESTROYS DATA)
+```
+
+Requires `uv` on the host (migrations run outside the containers). After a
+restart, fully quit and reopen Claude Desktop so `mcp-remote` reconnects.
+
 ### Security model
 
 - **Runs as the restricted `soulservice_app` role**, not the DB owner. Per-soul data is read/written through the same row-level-security (RLS) context as the MCP runtime; the UI no longer bypasses RLS.

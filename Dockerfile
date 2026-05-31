@@ -16,7 +16,8 @@ COPY pyproject.toml uv.lock* ./
 RUN uv sync --frozen --no-dev 2>/dev/null || uv sync --no-dev
 
 COPY src/ ./src/
-COPY george.yaml ./george.yaml
+# Seed Self Core files, available for `soulctl init`/`self-core import` in-container
+COPY example-soul.yaml george.soul.yaml ./
 
 # --- MCP Server ---
 FROM base AS mcp

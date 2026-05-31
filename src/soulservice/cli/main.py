@@ -1222,6 +1222,269 @@ def memory_forget(memory_id: str):
     click.echo(f"Memory {memory_id[:8]}... marked as forgotten.")
 
 
+# ── Fact ──────────────────────────────────────────────────────
+
+
+@cli.group()
+def fact():
+    """Manage soul facts (structured knowledge)."""
+
+
+@fact.command("set")
+@click.option("--soul", "soul_slug", required=True, help="Soul slug")
+@click.option("--category", required=True, help="Fact category (e.g. 'user_profile')")
+@click.option("--key", required=True, help="Fact key (e.g. 'employer')")
+@click.option("--confidence", default=1.0, help="Confidence score 0.0-1.0")
+@click.argument("value")
+def fact_set(soul_slug: str, category: str, key: str, confidence: float, value: str):
+    """Set (upsert) a fact for a soul.
+
+    VALUE is the fact content as a string.
+    """
+    import re
+
+    pattern = re.compile(r"^[a-z][a-z0-9_-]{0,49}$")
+    if not pattern.match(category):
+        click.echo(f"Error: invalid category format: '{category}'", err=True)
+        raise SystemExit(1)
+    if not pattern.match(key):
+        click.echo(f"Error: invalid key format: '{key}'", err=True)
+        raise SystemExit(1)
+
+    async def _set():
+        async with async_session_factory() as session:
+            row = await session.execute(
+                text("SELECT id, tenant_id FROM souls WHERE slug = :slug"),
+                {"slug": soul_slug},
+            )
+            soul_row = row.mappings().first()
+            if not soul_row:
+                click.echo(f"Error: soul '{soul_slug}' not found.", err=True)
+                raise SystemExit(1)
+
+            soul_id = soul_row["id"]
+            tenant_id = soul_row["tenant_id"]
+
+            dek_row = await session.execute(
+                text("SELECT dek_encrypted FROM soul_keys WHERE soul_id = :sid"),
+                {"sid": str(soul_id)},
+            )
+            dek_result = dek_row.mappings().first()
+            if not dek_result:
+                click.echo("Error: no encryption key for this soul.", err=True)
+                raise SystemExit(1)
+
+            dek = decrypt_dek(bytes(dek_result["dek_encrypted"]))
+            ct, nonce = encrypt_content(value, dek)
+
+            await session.execute(
+                text("""
+                    INSERT INTO facts
+                        (tenant_id, soul_id, category, key, value_encrypted,
+                         value_nonce, confidence, status, updated_at)
+                    VALUES
+                        (:tid, :sid, :cat, :key, :ct, :nonce, :conf, 'active', NOW())
+                    ON CONFLICT (tenant_id, soul_id, category, key)
+                    DO UPDATE SET
+                        value_encrypted = EXCLUDED.value_encrypted,
+                        value_nonce = EXCLUDED.value_nonce,
+                        confidence = EXCLUDED.confidence,
+                        status = 'active',
+                        updated_at = NOW()
+                """),
+                {
+                    "tid": str(tenant_id),
+                    "sid": str(soul_id),
+                    "cat": category,
+                    "key": key,
+                    "ct": ct,
+                    "nonce": nonce,
+                    "conf": confidence,
+                },
+            )
+            await session.commit()
+
+    _run(_set())
+    click.echo(f"Fact set: {category}/{key}")
+
+
+@fact.command("list")
+@click.option("--soul", "soul_slug", required=True, help="Soul slug")
+@click.option("--category", default=None, help="Filter by category")
+def fact_list(soul_slug: str, category: str | None):
+    """List facts for a soul."""
+
+    async def _list():
+        async with async_session_factory() as session:
+            row = await session.execute(
+                text("SELECT id FROM souls WHERE slug = :slug"),
+                {"slug": soul_slug},
+            )
+            soul_row = row.mappings().first()
+            if not soul_row:
+                click.echo(f"Error: soul '{soul_slug}' not found.", err=True)
+                raise SystemExit(1)
+
+            soul_id = soul_row["id"]
+
+            dek_row = await session.execute(
+                text("SELECT dek_encrypted FROM soul_keys WHERE soul_id = :sid"),
+                {"sid": str(soul_id)},
+            )
+            dek_result = dek_row.mappings().first()
+            if not dek_result:
+                click.echo("Error: no encryption key for this soul.", err=True)
+                raise SystemExit(1)
+            dek = decrypt_dek(bytes(dek_result["dek_encrypted"]))
+
+            if category:
+                rows = await session.execute(
+                    text(
+                        "SELECT id, category, key, value_encrypted, value_nonce, "
+                        "confidence, updated_at "
+                        "FROM facts WHERE soul_id = :sid AND status = 'active' "
+                        "AND category = :cat ORDER BY category, key"
+                    ),
+                    {"sid": str(soul_id), "cat": category},
+                )
+            else:
+                rows = await session.execute(
+                    text(
+                        "SELECT id, category, key, value_encrypted, value_nonce, "
+                        "confidence, updated_at "
+                        "FROM facts WHERE soul_id = :sid AND status = 'active' "
+                        "ORDER BY category, key"
+                    ),
+                    {"sid": str(soul_id)},
+                )
+
+            results = []
+            for f in rows.mappings().all():
+                plaintext = decrypt_content(
+                    bytes(f["value_encrypted"]),
+                    bytes(f["value_nonce"]),
+                    dek,
+                )
+                results.append({**f, "value": plaintext})
+            return results
+
+    facts = _run(_list())
+    if not facts:
+        click.echo("No facts found.")
+        return
+
+    click.echo(f"{len(facts)} fact(s):\n")
+    for f in facts:
+        preview = f["value"][:80].replace("\n", " ")
+        if len(f["value"]) > 80:
+            preview += "..."
+        click.echo(
+            f"  {f['category']:20s}  {f['key']:20s}  "
+            f"conf={f['confidence']:.1f}  {preview}"
+        )
+
+
+@fact.command("get")
+@click.option("--soul", "soul_slug", required=True, help="Soul slug")
+@click.option("--category", required=True, help="Fact category")
+@click.option("--key", required=True, help="Fact key")
+def fact_get(soul_slug: str, category: str, key: str):
+    """Get a single fact's value."""
+
+    async def _get():
+        async with async_session_factory() as session:
+            row = await session.execute(
+                text("SELECT id FROM souls WHERE slug = :slug"),
+                {"slug": soul_slug},
+            )
+            soul_row = row.mappings().first()
+            if not soul_row:
+                click.echo(f"Error: soul '{soul_slug}' not found.", err=True)
+                raise SystemExit(1)
+
+            soul_id = soul_row["id"]
+
+            dek_row = await session.execute(
+                text("SELECT dek_encrypted FROM soul_keys WHERE soul_id = :sid"),
+                {"sid": str(soul_id)},
+            )
+            dek_result = dek_row.mappings().first()
+            if not dek_result:
+                click.echo("Error: no encryption key for this soul.", err=True)
+                raise SystemExit(1)
+            dek = decrypt_dek(bytes(dek_result["dek_encrypted"]))
+
+            fact_row = await session.execute(
+                text(
+                    "SELECT value_encrypted, value_nonce, confidence, updated_at "
+                    "FROM facts WHERE soul_id = :sid AND category = :cat "
+                    "AND key = :key AND status = 'active'"
+                ),
+                {"sid": str(soul_id), "cat": category, "key": key},
+            )
+            result = fact_row.mappings().first()
+            if not result:
+                click.echo(f"Error: no active fact '{category}/{key}'.", err=True)
+                raise SystemExit(1)
+
+            plaintext = decrypt_content(
+                bytes(result["value_encrypted"]),
+                bytes(result["value_nonce"]),
+                dek,
+            )
+            return plaintext, result["confidence"], result["updated_at"]
+
+    value, confidence, updated_at = _run(_get())
+    click.echo(f"  {category}/{key}  (confidence={confidence:.1f}, updated={updated_at})")
+    click.echo(f"  {value}")
+
+
+@fact.command("remove")
+@click.option("--soul", "soul_slug", required=True, help="Soul slug")
+@click.option("--category", required=True, help="Fact category")
+@click.option("--key", required=True, help="Fact key")
+@click.confirmation_option(prompt="Remove this fact?")
+def fact_remove(soul_slug: str, category: str, key: str):
+    """Soft-delete a fact."""
+
+    async def _remove():
+        async with async_session_factory() as session:
+            row = await session.execute(
+                text("SELECT id FROM souls WHERE slug = :slug"),
+                {"slug": soul_slug},
+            )
+            soul_row = row.mappings().first()
+            if not soul_row:
+                click.echo(f"Error: soul '{soul_slug}' not found.", err=True)
+                raise SystemExit(1)
+
+            soul_id = soul_row["id"]
+
+            result = await session.execute(
+                text(
+                    "SELECT id FROM facts WHERE soul_id = :sid "
+                    "AND category = :cat AND key = :key AND status = 'active'"
+                ),
+                {"sid": str(soul_id), "cat": category, "key": key},
+            )
+            fact_row = result.mappings().first()
+            if not fact_row:
+                click.echo(f"Error: no active fact '{category}/{key}'.", err=True)
+                raise SystemExit(1)
+
+            await session.execute(
+                text(
+                    "UPDATE facts SET status = 'deleted', updated_at = NOW() "
+                    "WHERE id = :fid"
+                ),
+                {"fid": str(fact_row["id"])},
+            )
+            await session.commit()
+
+    _run(_remove())
+    click.echo(f"Fact '{category}/{key}' removed.")
+
+
 # ── Health ───────────────────────────────────────────────────────
 
 

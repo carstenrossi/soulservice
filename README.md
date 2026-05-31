@@ -94,15 +94,18 @@ python -c "import secrets, base64; print(base64.b64encode(secrets.token_bytes(32
 # Set POSTGRES_PASSWORD to something random
 # Set ANTHROPIC_API_KEY if you want the chat interface
 
-# Start Postgres
+# Start Postgres (init.sql bootstraps extensions + roles only)
 docker compose up -d postgres
 
 # Install dependencies
 uv sync --python python3.12
 
-# Initialize database (creates tenant, user, soul + imports Self Core)
+# Apply the schema (tables, indexes, RLS, grants live in Alembic migrations)
 export DATABASE_URL="postgresql+asyncpg://soulservice:${POSTGRES_PASSWORD}@localhost:6000/soulservice"
 export SOULSERVICE_MASTER_KEY
+uv run alembic upgrade head
+
+# Initialize database (creates tenant, user, soul + imports Self Core)
 uv run soulctl init --self-core-file example-soul.yaml
 
 # Create API tokens
